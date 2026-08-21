@@ -46,8 +46,8 @@ from .components import (Bracket, Brace, Callout, ColorBar, Heatmap,
                          Table, Vector)
 
 # -- connectors -------------------------------------------------------------
-from .connectors import (Connector, arrow, connect, curve, double_arrow,
-                         elbow, line, self_loop)
+from .connectors import (Connector, Handle, arrow, connect, curve,
+                         double_arrow, elbow, line, self_loop)
 
 # -- layout -----------------------------------------------------------------
 from .layout import (align, align_h, align_v, baseline_of, between, bbox_of,
@@ -94,8 +94,8 @@ __all__ = [
     "Bracket", "Legend", "Table", "Callout", "Spacer", "Component",
     "LabelledMatrix",
     # connectors
-    "Connector", "arrow", "line", "elbow", "curve", "connect", "double_arrow",
-    "self_loop",
+    "Connector", "Handle", "arrow", "line", "elbow", "curve", "connect",
+    "double_arrow", "self_loop",
     # layout
     "align", "align_h", "align_v", "distribute_h", "distribute_v", "spread_h",
     "spread_v", "hstack", "vstack", "grid", "fit", "frame_around", "between",

@@ -7,6 +7,7 @@ and resolved at render time, so moving a box drags its arrows along.
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 
 from .core import Anchor, Element
 from .geom import BBox, Point, polyline_length, to_point
@@ -18,7 +19,7 @@ from .text import Text
 
 __all__ = [
     "Connector", "arrow", "line", "elbow", "curve", "connect", "double_arrow",
-    "self_loop", "PathAnchor", "HEADS",
+    "self_loop", "PathAnchor", "Handle", "HEADS",
 ]
 
 HEADS = ("triangle", "stealth", "open", "vee", "circle", "dot", "diamond",
@@ -26,6 +27,59 @@ HEADS = ("triangle", "stealth", "open", "vee", "circle", "dot", "diamond",
 
 _SIDE_NORMAL = {"n": Point(0, -1), "s": Point(0, 1),
                 "e": Point(1, 0), "w": Point(-1, 0)}
+
+
+@dataclass(frozen=True)
+class Handle:
+    """One end's Bezier handle — the "whisker" a vector editor lets you drag.
+
+    ``angle`` turns the handle off the direction the curve would leave in
+    anyway (the face you attached to, or the chord for a bare point), and
+    ``length`` says how far it reaches as a fraction of the straight-line
+    distance between the endpoints. A fraction rather than a distance so the
+    curve keeps its shape when the things it connects move apart::
+
+        curve(a.e, b.w, start_handle=0.6, end_handle=(0.2, -30))
+
+    Pass ``px`` for an absolute reach in figure units instead; it does not
+    follow the layout, so prefer ``length`` unless you need an exact number.
+
+    ``start_handle=`` and ``end_handle=`` also take the shorthands a bare
+    number (``0.6``) and a tuple of this class's arguments (``(0.2, -30)``).
+    """
+
+    length: float = 0.4
+    angle: float = 0.0
+    px: float = None
+
+    def direction(self, base: Point) -> Point:
+        """``base`` turned by ``angle`` degrees (clockwise on screen)."""
+        if not self.angle:
+            return base.normalized()
+        a = math.radians(self.angle)
+        c, s = math.cos(a), math.sin(a)
+        u = base.normalized()
+        return Point(u.x * c - u.y * s, u.x * s + u.y * c)
+
+    def reach(self, chord: float) -> float:
+        """How far the handle extends, given the endpoint separation."""
+        return float(self.px) if self.px is not None else self.length * chord
+
+
+def _as_handle(spec) -> Handle | None:
+    """Accept a ``Handle``, a bare fraction, or a tuple of its arguments."""
+    if spec is None or isinstance(spec, Handle):
+        return spec
+    if isinstance(spec, (int, float)):
+        return Handle(float(spec))
+    try:
+        args = tuple(spec)
+    except TypeError:
+        args = ()
+    if 1 <= len(args) <= 3:
+        return Handle(*args)
+    raise ValueError(f"cannot read {spec!r} as a handle; pass a number, a "
+                     f"tuple of Handle arguments, or a Handle")
 
 
 class PathAnchor(Anchor):
@@ -138,7 +192,8 @@ class Connector(Element):
 
     def __init__(self, start, end, *, route: str = "straight", waypoints=None,
                  stub: float = 14.0, bend: float = 0.0, bow: float = 0.0,
-                 corner: float = 6.0,
+                 corner: float = 6.0, tension: float = 0.5,
+                 start_handle=None, end_handle=None,
                  gap: float = 0.0, start_gap: float = None, end_gap: float = None,
                  head=None, tail=None, head_size=None, tail_size=None,
                  start_side: str = None, end_side: str = None,
@@ -153,6 +208,9 @@ class Connector(Element):
         self.bend = float(bend)
         self.bow = float(bow)
         self.corner = float(corner)
+        self.tension = float(tension)
+        self.start_handle = _as_handle(start_handle)
+        self.end_handle = _as_handle(end_handle)
         self.start_gap = float(gap if start_gap is None else start_gap)
         self.end_gap = float(gap if end_gap is None else end_gap)
         self.start_side = start_side
@@ -227,8 +285,10 @@ class Connector(Element):
             return d, p0, sd, p1, ed
 
         if route in ("curve", "bezier", "spline", "arc"):
-            d, sd, ed = _curve_path(p0, n0, p1, n1, wp, self.bend,
-                                    self.bow, arc=(route == "arc"))
+            d, sd, ed = _curve_path(p0, n0, p1, n1, wp, self.bend, self.bow,
+                                    arc=(route == "arc"),
+                                    h0=self.start_handle, h1=self.end_handle,
+                                    tension=self.tension)
             return d, p0, sd, p1, ed
 
         pts = [p0] + wp + [p1]
@@ -514,58 +574,102 @@ def _dedupe(pts: list) -> list:
 
 
 def _curve_path(p0: Point, n0: Point, p1: Point, n1: Point, waypoints: list,
-                bend: float, bow: float = 0.0, arc: bool = False) -> tuple:
+                bend: float, bow: float = 0.0, arc: bool = False,
+                h0: Handle = None, h1: Handle = None,
+                tension: float = 0.5) -> tuple:
     """Build the curve.
 
     ``bend`` deepens the bow: when the endpoints are anchors (so we know which
     way they face) it lengthens the handles *along those normals*; for plain
     points there is no normal to follow, so it bows sideways instead.
     ``bow`` always displaces sideways, positive = left of travel.
+
+    ``h0`` and ``h1`` place an end's control point outright. An end given a
+    handle ignores ``bend`` and ``bow``, which exist to guess at what the
+    handle says explicitly.
     """
     chord = p1 - p0
     dist = chord.length or 1.0
+    u = chord.normalized()
+    base0 = n0 if n0.length else u
+    base1 = n1 if n1.length else -u
+
     if waypoints:
         pts = [p0] + waypoints + [p1]
-        return _catmull_rom(pts), (waypoints[0] - p0), (p1 - waypoints[-1])
+        # Pin the outer tangents to the faces the curve is attached to, so
+        # adding a waypoint does not swing the arrow off the box it leaves.
+        start = _spline_tangent(h0, base0, dist, pts[0], pts[1], tension)
+        end = _spline_tangent(h1, base1, dist, pts[-1], pts[-2], tension)
+        d = _catmull_rom(pts, tension, start_c=start, end_c=end)
+        return d, (start - p0), (p1 - end)
 
     left = Point(chord.y, -chord.x).normalized()   # left of travel (y is down)
 
-    if arc or (n0.length == 0 and n1.length == 0):
+    if arc or (n0.length == 0 and n1.length == 0 and h0 is None and h1 is None):
         b = bend + bow if (bend or bow) else 0.25
         mid = p0.lerp(p1, 0.5) + left * (dist * b)
         d = (f"M{fmt(p0.x)} {fmt(p0.y)}Q{fmt(mid.x)} {fmt(mid.y)} "
              f"{fmt(p1.x)} {fmt(p1.y)}")
         return d, (mid - p0), (p1 - mid)
 
-    # Handle reach follows how well each exit normal lines up with the chord:
-    # a sideways exit gets a short handle so the curve stays tidy.
-    u = chord.normalized()
-    d0 = n0 if n0.length else u
-    d1 = n1 if n1.length else -u
     reach = max(0.18, abs(bend))
-    k0 = min(dist * 0.9, max(10.0, dist * 0.55 * max(abs(u.dot(d0)), reach)))
-    k1 = min(dist * 0.9, max(10.0, dist * 0.55 * max(abs((-u).dot(d1)), reach)))
-    c0 = p0 + d0 * k0
-    c1 = p1 + d1 * k1
-    if bow:
-        c0 = c0 + left * (dist * bow * 0.6)
-        c1 = c1 + left * (dist * bow * 0.6)
+    push = left * (dist * bow * 0.6)
+    c0 = _control_point(p0, base0, h0, u, dist, reach, push)
+    c1 = _control_point(p1, base1, h1, -u, dist, reach, push)
     d = (f"M{fmt(p0.x)} {fmt(p0.y)}C{fmt(c0.x)} {fmt(c0.y)} "
          f"{fmt(c1.x)} {fmt(c1.y)} {fmt(p1.x)} {fmt(p1.y)}")
     return d, (c0 - p0), (p1 - c1)
 
 
-def _catmull_rom(points: list, tension: float = 0.5) -> str:
-    """Smooth cubic spline through all the points."""
+def _control_point(p: Point, base: Point, h: Handle, along: Point,
+                   dist: float, reach: float, push: Point) -> Point:
+    """Where one end's Bezier control point lands.
+
+    Without a handle the reach follows how well the exit direction lines up
+    with the chord, so a sideways exit gets a short handle and the curve stays
+    tidy; ``bend`` raises the floor on that and ``bow`` displaces it sideways.
+    """
+    if h is not None:
+        return p + h.direction(base) * h.reach(dist)
+    k = min(dist * 0.9, max(10.0, dist * 0.55 * max(abs(along.dot(base)), reach)))
+    return p + base * k + push
+
+
+def _spline_tangent(h: Handle, base: Point, dist: float, end: Point,
+                    neighbour: Point, tension: float) -> Point:
+    """The control point next to a spline's first or last knot.
+
+    Without a handle the reach is the one Catmull-Rom would have chosen, so
+    pinning the direction changes where the curve leaves, not how far it
+    swings before it gets going.
+    """
+    if h is not None:
+        return end + h.direction(base) * h.reach(dist)
+    return end + base.normalized() * ((neighbour - end).length * tension / 3.0)
+
+
+def _catmull_rom(points: list, tension: float = 0.5, start_c: Point = None,
+                 end_c: Point = None) -> str:
+    """Smooth cubic spline through all the points.
+
+    ``start_c`` and ``end_c`` override the control points adjacent to the
+    first and last knot, which is how an attached curve keeps its facing.
+    """
     pts = [to_point(p) for p in points]
     if len(pts) < 3:
         return path_from_points(pts)
     ext = [pts[0]] + pts + [pts[-1]]
-    parts = [f"M{fmt(pts[0].x)} {fmt(pts[0].y)}"]
+    segments = []
     for i in range(1, len(ext) - 2):
         p0, p1, p2, p3 = ext[i - 1], ext[i], ext[i + 1], ext[i + 2]
-        c1 = p1 + (p2 - p0) * (tension / 3.0)
-        c2 = p2 - (p3 - p1) * (tension / 3.0)
+        segments.append([p1 + (p2 - p0) * (tension / 3.0),
+                         p2 - (p3 - p1) * (tension / 3.0), p2])
+    if start_c is not None:
+        segments[0][0] = start_c
+    if end_c is not None:
+        segments[-1][1] = end_c
+    parts = [f"M{fmt(pts[0].x)} {fmt(pts[0].y)}"]
+    for c1, c2, p2 in segments:
         parts.append(f"C{fmt(c1.x)} {fmt(c1.y)} {fmt(c2.x)} {fmt(c2.y)} "
                      f"{fmt(p2.x)} {fmt(p2.y)}")
     return "".join(parts)
@@ -639,6 +743,11 @@ def curve(start, end, bend: float = 0.0, **kw) -> Connector:
     you connect anchors (``a.s`` leaves downward), or sideways for plain
     points.  ``bow=`` always pushes sideways (positive = left of travel), and
     ``waypoints=[...]`` routes the curve through specific points.
+
+    For control over the shape rather than a nudge to it, place either end's
+    Bezier handle with ``start_handle=`` / ``end_handle=`` (see :class:`Handle`)::
+
+        curve(a.e, b.w, start_handle=0.8, end_handle=0.15)
     """
     kw.setdefault("route", "curve")
     return Connector(start, end, bend=bend, **kw)

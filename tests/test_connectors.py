@@ -3,7 +3,7 @@ import re
 
 import pytest
 
-from figkit import (Box, Connector, Point, arrow, connect, curve,
+from figkit import (Box, Connector, Handle, Point, arrow, connect, curve,
                     double_arrow, elbow, line)
 from figkit.svgdoc import RenderContext
 from figkit.svgpath import abs_segments, path_bbox
@@ -202,3 +202,125 @@ def test_head_points_along_the_path_not_across_it():
     tip = conn.geometry()[3]
     axis = (tip - stroke_end).normalized()
     assert axis.dot(conn.direction_at(1.0)) > 0.9        # near-parallel
+
+
+# -- Bezier handles ---------------------------------------------------------
+
+def _controls(conn):
+    """``(first control point, last control point)`` of a cubic path."""
+    segs = [s for s in abs_segments(conn.path_data()) if s[0] == "C"]
+    assert segs, "expected a cubic path"
+    return Point(segs[0][1], segs[0][2]), Point(segs[-1][3], segs[-1][4])
+
+
+def _boxes():
+    a = Box("A", 20, 80, 80, 40, add=False)
+    b = Box("B", 300, 20, 80, 40, add=False)
+    return a, b
+
+
+def test_waypoint_curve_still_leaves_along_the_face_it_is_attached_to():
+    """The regression: a waypoint used to throw the endpoint normals away."""
+    a, b = _boxes()
+    conn = curve(a.e, b.w, waypoints=[(200, 140)], add=False)
+    c0, c1 = _controls(conn)
+    assert c0.y == pytest.approx(a.e.point.y)     # leaves east, horizontally
+    assert c1.y == pytest.approx(b.w.point.y)     # arrives west, horizontally
+    assert c0.x > a.e.point.x                     # and forwards, not backwards
+
+
+def test_waypoint_curve_still_passes_through_its_waypoints():
+    a, b = _boxes()
+    conn = curve(a.e, b.w, waypoints=[(200, 140)], add=False)
+    assert any(abs(p.x - 200) < 1e-6 and abs(p.y - 140) < 1e-6
+               for p in conn.polyline(steps=8))
+
+
+def test_handle_length_is_a_fraction_of_the_chord():
+    a, b = _boxes()
+    p0, p1 = a.e.point, b.w.point
+    dist = (p1 - p0).length
+    c0, _ = _controls(curve(a.e, b.w, start_handle=0.6, add=False))
+    assert (c0 - p0).length == pytest.approx(0.6 * dist)
+    assert c0.y == pytest.approx(p0.y)            # along the face by default
+
+
+def test_each_end_is_controlled_separately():
+    a, b = _boxes()
+    p0, p1 = a.e.point, b.w.point
+    dist = (p1 - p0).length
+    c0, c1 = _controls(curve(a.e, b.w, start_handle=0.8, end_handle=0.15,
+                             add=False))
+    assert (c0 - p0).length == pytest.approx(0.8 * dist)
+    assert (c1 - p1).length == pytest.approx(0.15 * dist)
+
+
+def test_angle_turns_the_handle_off_the_face():
+    a, b = _boxes()
+    p0 = a.e.point
+    c0, _ = _controls(curve(a.e, b.w, start_handle=(0.5, -40), add=False))
+    got = math.degrees(math.atan2(c0.y - p0.y, c0.x - p0.x))
+    assert got == pytest.approx(-40, abs=1e-3)    # measured off east
+
+
+def test_handles_follow_the_layout_but_px_does_not():
+    a, b = _boxes()
+    p0 = a.e.point
+    frac = curve(a.e, b.w, start_handle=0.5, add=False)
+    fixed = curve(a.e, b.w, start_handle=Handle(px=60), add=False)
+    before = (_controls(frac)[0] - p0).length
+    assert (_controls(fixed)[0] - p0).length == pytest.approx(60)
+
+    b.move(200, 0)
+    assert (_controls(frac)[0] - p0).length > before * 1.5
+    assert (_controls(fixed)[0] - p0).length == pytest.approx(60)
+
+
+@pytest.mark.parametrize("spec", [0.6, (0.6,), (0.6, 0.0), Handle(0.6)])
+def test_the_handle_shorthands_all_mean_the_same_thing(spec):
+    a, b = _boxes()
+    assert (curve(a.e, b.w, start_handle=spec, add=False).path_data()
+            == curve(a.e, b.w, start_handle=Handle(0.6), add=False).path_data())
+
+
+def test_a_bad_handle_says_so():
+    with pytest.raises(ValueError):
+        curve((0, 0), (10, 10), start_handle=(1, 2, 3, 4), add=False)
+
+
+def test_handles_give_bare_points_a_direction_to_leave_in():
+    """Without normals or handles this is a quadratic bow; handles make it
+    a cubic the caller shapes."""
+    plain = curve((0, 0), (100, 0), add=False).path_data()
+    assert "Q" in plain and "C" not in plain
+    shaped = curve((0, 0), (100, 0), start_handle=(0.5, -60),
+                   end_handle=(0.5, 60), add=False)
+    c0, c1 = _controls(shaped)
+    assert c0.y < 0 and c1.y < 0                 # both handles lift the curve
+    assert (c0 - Point(0, 0)).length == pytest.approx(50)
+
+
+def test_a_handled_end_ignores_bend_and_bow():
+    """They exist to guess what the handle states outright."""
+    a, b = _boxes()
+    kw = dict(start_handle=0.5, add=False)
+    plain = _controls(curve(a.e, b.w, **kw))[0]
+    assert _controls(curve(a.e, b.w, bend=0.9, bow=0.7, **kw))[0] == plain
+
+
+def test_curves_without_handles_are_untouched():
+    a, b = _boxes()
+    assert curve(a.e, b.w).path_data() == "M100 100C210 100 190 40 300 40"
+    assert (curve(a.e, b.w, bow=0.4).path_data()
+            == "M100 100C195.6 52 175.6 -8 300 40")
+    assert connect((0, 0), (100, 0), route="arc").path_data() == "M0 0Q50 -25 100 0"
+
+
+def test_tension_loosens_the_spline_through_waypoints():
+    a, b = _boxes()
+    slack = curve(a.e, b.w, waypoints=[(200, 140)], tension=1.2, add=False)
+    tight = curve(a.e, b.w, waypoints=[(200, 140)], tension=0.1, add=False)
+    assert _controls(slack)[0].x > _controls(tight)[0].x
+    # Pinning the outer tangents survives either way.
+    assert _controls(slack)[0].y == pytest.approx(a.e.point.y)
+    assert _controls(tight)[0].y == pytest.approx(a.e.point.y)

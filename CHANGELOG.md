@@ -4,6 +4,26 @@ All notable changes to figkit are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and figkit uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Connectors
+
+- `start_handle=` and `end_handle=` place either end's Bezier handle — the
+  "whisker" a vector editor lets you drag. The direction is the asymptote the
+  curve leaves along, the length is how long it clings to it, given as a
+  fraction of the endpoint separation so the shape survives the layout
+  moving. Takes a bare fraction, a tuple, or a `Handle` (which also offers
+  `px=` for an absolute reach). An end given a handle ignores `bend`/`bow`.
+- Handles also give curves between bare points a direction to leave in, which
+  previously only anchors could supply.
+- `tension=` (default 0.5) loosens the spline threaded through `waypoints=`.
+
+### Fixed
+
+- A curve with waypoints threw its endpoint normals away, so `curve(a.e, b.w,
+  waypoints=[p])` left the box diagonally instead of along the face it was
+  attached to. The outer tangents are now pinned to the attachment normals.
+
 ## [0.1.0] — 2026-08-21
 
 First public release.

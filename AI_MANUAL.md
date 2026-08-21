@@ -74,6 +74,7 @@ problem with coordinates, and `no issues` when the figure is clean.
 | arrow | `arrow(a.e, b.w, label="x")` |
 | orthogonal | `elbow(a.e, b.w, stub=14, corner=6)` |
 | curved | `curve(a.s, b.s, bend=0.4)` |
+| shaped curve | `curve(a.e, b.w, start_handle=0.6, end_handle=(0.2, -30))` |
 | align a group | `align([a, b, c], "top")` |
 | even spacing | `distribute_h(items, gap=20)` / `spread_h(items, x0, x1)` |
 | row / column | `hstack(items, gap=16, align="center")` / `vstack(...)` |
@@ -260,7 +261,28 @@ On connectors and other line-like elements (`Line`, `Polyline`, `Path`,
 `bend` deepens the bow **along the anchors' facing direction** — `curve(a.s,
 b.s, bend=0.5)` dips below both boxes. For plain points there is no normal to
 follow so it bows sideways. `bow=` always pushes sideways (positive = left of
-travel).
+travel). Both are symmetric, and `bend` acts as a *floor* on the curve's
+natural reach, so small values often change nothing.
+
+For real control, place either end's Bezier handle yourself — the "whisker" a
+vector editor lets you drag:
+
+```python
+curve(a.e, b.w, start_handle=0.6)                # leaves east on a long handle
+curve(a.e, b.w, start_handle=0.8, end_handle=0.15)   # asymmetric
+curve(a.e, b.w, start_handle=(0.5, -40))         # turned 40 deg off the face
+curve(a.e, b.w, start_handle=Handle(px=60))      # absolute reach
+```
+
+The handle's **direction** is the asymptote — which way the curve insists on
+leaving — and its **length** is how long it clings to it. Length is a fraction
+of the straight-line distance between the endpoints, so the curve keeps its
+shape when the things it connects move apart; `Handle(px=...)` opts out of
+that. Angles are degrees off the face you attached to, positive clockwise on
+screen. An end you give a handle ignores `bend` and `bow`.
+
+Handles work with `waypoints=` too, and `tension=` (default 0.5) loosens the
+spline that threads them.
 
 `self_loop(element, side="top", size=36, label="retry")` draws an arrow that
 leaves an element and returns to it — the staple of state machines.
