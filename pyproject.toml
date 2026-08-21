@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "figkit"
+version = "0.1.0"
+description = "Design figures with Python code — boxes, arrows, LaTeX and data, exported to SVG/PNG/PDF/HTML"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "figkit contributors" }]
+keywords = ["svg", "figures", "diagrams", "vector", "graphics", "latex",
+            "publication", "illustration"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Topic :: Multimedia :: Graphics",
+  "Topic :: Scientific/Engineering :: Visualization",
+]
+dependencies = [
+  "fonttools>=4.30",
+]
+
+[project.optional-dependencies]
+latex  = ["matplotlib>=3.5"]
+export = ["cairosvg>=2.5"]
+all    = ["matplotlib>=3.5", "cairosvg>=2.5"]
+dev    = ["matplotlib>=3.5", "cairosvg>=2.5", "pytest>=7.0"]
+
+[project.urls]
+Homepage = "https://github.com/philippspohn/figkit-claude"
+
+[tool.setuptools]
+packages = ["figkit"]
+
+[tool.setuptools.package-data]
+figkit = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning"]

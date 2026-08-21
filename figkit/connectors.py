@@ -1,0 +1,584 @@
+"""Arrows and connectors: straight, elbow, curved, or via waypoints.
+
+Endpoints are stored as *live references* — anchors, elements or raw points —
+and resolved at render time, so moving a box drags its arrows along.
+"""
+
+from __future__ import annotations
+
+import math
+
+from .core import Anchor, Element
+from .geom import BBox, Point, polyline_length, to_point
+from .paint import paint_attrs
+from .svgdoc import Node, RenderContext
+from .svgpath import (fmt, flatten_path, path_bbox, path_from_points,
+                      point_at, rounded_polyline)
+from .text import Text
+
+__all__ = [
+    "Connector", "arrow", "line", "elbow", "curve", "connect", "double_arrow",
+    "HEADS",
+]
+
+HEADS = ("triangle", "stealth", "open", "vee", "circle", "dot", "diamond",
+         "square", "bar", "tee", "cross", "none")
+
+_SIDE_NORMAL = {"n": Point(0, -1), "s": Point(0, 1),
+                "e": Point(1, 0), "w": Point(-1, 0)}
+
+
+# ==========================================================================
+# Arrow heads
+# ==========================================================================
+
+def _head_geometry(kind: str, tip: Point, direction: Point, size: float,
+                   width_ratio: float = 0.62) -> tuple:
+    """Return ``(path_or_None, node_kwargs, inset)`` for one arrow head.
+
+    ``inset`` is how far back along the line the stroke should stop so it does
+    not poke out of the head.
+    """
+    kind = (kind or "none").lower()
+    if kind in ("none", "", "off"):
+        return None, {}, 0.0
+    d = direction.normalized()
+    if d.length == 0:
+        d = Point(1, 0)
+    n = Point(-d.y, d.x)          # perpendicular
+    half = size * width_ratio
+
+    if kind in ("triangle", "arrow", "filled"):
+        back = tip - d * size
+        pts = [tip, back + n * half, back - n * half]
+        return path_from_points(pts, close=True), {"filled": True}, size * 0.92
+    if kind == "stealth":
+        back = tip - d * size
+        notch = tip - d * (size * 0.55)
+        pts = [tip, back + n * half, notch, back - n * half]
+        return path_from_points(pts, close=True), {"filled": True}, size * 0.6
+    if kind in ("open", "vee", "v", "line"):
+        back = tip - d * size
+        d_path = (f"M{fmt((back + n * half).x)} {fmt((back + n * half).y)}"
+                  f"L{fmt(tip.x)} {fmt(tip.y)}"
+                  f"L{fmt((back - n * half).x)} {fmt((back - n * half).y)}")
+        return d_path, {"filled": False}, size * 0.35
+    if kind in ("circle", "dot", "disc"):
+        r = size * 0.42
+        c = tip - d * r
+        return None, {"circle": (c, r), "filled": kind != "circle_open"}, r * 1.9
+    if kind == "diamond":
+        c = tip - d * (size / 2.0)
+        pts = [tip, c + n * half, tip - d * size, c - n * half]
+        return path_from_points(pts, close=True), {"filled": True}, size * 0.95
+    if kind in ("square", "box"):
+        c = tip - d * (size * 0.4)
+        h = size * 0.4
+        pts = [c + d * h + n * h, c + d * h - n * h,
+               c - d * h - n * h, c - d * h + n * h]
+        return path_from_points(pts, close=True), {"filled": True}, size * 0.78
+    if kind in ("bar", "tee", "stop"):
+        d_path = (f"M{fmt((tip + n * half).x)} {fmt((tip + n * half).y)}"
+                  f"L{fmt((tip - n * half).x)} {fmt((tip - n * half).y)}")
+        return d_path, {"filled": False}, 0.0
+    if kind == "cross":
+        h = size * 0.45
+        d_path = (f"M{fmt((tip + n * h + d * h).x)} {fmt((tip + n * h + d * h).y)}"
+                  f"L{fmt((tip - n * h - d * h).x)} {fmt((tip - n * h - d * h).y)}"
+                  f"M{fmt((tip - n * h + d * h).x)} {fmt((tip - n * h + d * h).y)}"
+                  f"L{fmt((tip + n * h - d * h).x)} {fmt((tip + n * h - d * h).y)}")
+        return d_path, {"filled": False}, 0.0
+    raise ValueError(f"unknown arrow head {kind!r}; use one of {HEADS}")
+
+
+# ==========================================================================
+# Connector
+# ==========================================================================
+
+class Connector(Element):
+    """A line between two live endpoints, with optional heads and a label.
+
+    Prefer the helpers :func:`arrow`, :func:`elbow`, :func:`curve` and
+    :func:`line` — they are the same class with different defaults.
+    """
+
+    role = "arrow"
+
+    def __init__(self, start, end, *, route: str = "straight", waypoints=None,
+                 stub: float = 14.0, bend: float = 0.0, bow: float = 0.0,
+                 corner: float = 6.0,
+                 gap: float = 0.0, start_gap: float = None, end_gap: float = None,
+                 head=None, tail=None, head_size=None, tail_size=None,
+                 start_side: str = None, end_side: str = None,
+                 label=None, label_pos: float = 0.5, label_offset: float = 9.0,
+                 label_side: str = "auto", label_style=None, label_bg=None,
+                 label_rotate: bool = False, **kw):
+        self.start_ref = start
+        self.end_ref = end
+        self.route = str(route).lower()
+        self.waypoints = list(waypoints or [])
+        self.stub = float(stub)
+        self.bend = float(bend)
+        self.bow = float(bow)
+        self.corner = float(corner)
+        self.start_gap = float(gap if start_gap is None else start_gap)
+        self.end_gap = float(gap if end_gap is None else end_gap)
+        self.start_side = start_side
+        self.end_side = end_side
+        self._head = head
+        self._tail = tail
+        self._head_size = head_size
+        self._tail_size = tail_size
+        self.label_pos = float(label_pos)
+        self.label_offset = float(label_offset)
+        self.label_side = label_side
+        self.label_bg = label_bg
+        self.label_rotate = label_rotate
+        self._label: Text | None = None
+        super().__init__(0, 0, None, None, **kw)
+        if label is not None and label != "":
+            self._label = Text(label, add=False, style=label_style)
+            self._label.parent = self
+            self._label.role = "label"
+
+    # -- endpoint resolution ---------------------------------------------
+    def _endpoint(self, ref, toward: Point, side: str = None) -> tuple:
+        """Resolve one endpoint to ``(point, outward_normal)``."""
+        if isinstance(ref, Anchor):
+            p = ref.point
+            n = ref.normal
+            if n.length == 0:
+                n = (p - toward).normalized()
+            return p, n
+        if isinstance(ref, Element):
+            bb = ref.bbox
+            if side:
+                key = str(side).lower()[:2]
+                key = {"to": "n", "bo": "s", "le": "w", "ri": "e"}.get(key, key[0])
+                p = bb.anchor(key)
+                return p, _SIDE_NORMAL.get(key, Point(0, 0))
+            angle = math.degrees(math.atan2(toward.y - bb.cy, toward.x - bb.cx))
+            p = bb.at_angle(angle)
+            n = _dominant_normal(p, bb)
+            return p, n
+        p = to_point(ref)
+        return p, Point(0, 0)
+
+    def endpoints(self) -> tuple:
+        """``((p0, n0), (p1, n1))`` resolved right now."""
+        hint_a = to_point(self.waypoints[0]) if self.waypoints else _rough(self.end_ref)
+        hint_b = to_point(self.waypoints[-1]) if self.waypoints else _rough(self.start_ref)
+        a = self._endpoint(self.start_ref, hint_a, self.start_side)
+        b = self._endpoint(self.end_ref, hint_b, self.end_side)
+        if not self.waypoints:
+            a = self._endpoint(self.start_ref, b[0], self.start_side)
+            b = self._endpoint(self.end_ref, a[0], self.end_side)
+        return a, b
+
+    # -- geometry --------------------------------------------------------
+    def geometry(self) -> tuple:
+        """``(path_data, start_point, start_dir, end_point, end_dir)``."""
+        (p0, n0), (p1, n1) = self.endpoints()
+        if self.start_gap:
+            p0 = p0 + (n0 if n0.length else (p1 - p0).normalized()) * self.start_gap
+        if self.end_gap:
+            p1 = p1 + (n1 if n1.length else (p0 - p1).normalized()) * self.end_gap
+        wp = [to_point(w) for w in self.waypoints]
+        route = self.route
+
+        if route in ("elbow", "orth", "orthogonal", "hv", "vh", "manhattan"):
+            pts = _elbow_points(p0, n0, p1, n1, self.stub, route, wp)
+            d = rounded_polyline(pts, self.corner) if self.corner else \
+                path_from_points(pts)
+            sd = (pts[1] - pts[0]) if len(pts) > 1 else Point(1, 0)
+            ed = (pts[-1] - pts[-2]) if len(pts) > 1 else Point(1, 0)
+            return d, p0, sd, p1, ed
+
+        if route in ("curve", "bezier", "spline", "arc"):
+            d, sd, ed = _curve_path(p0, n0, p1, n1, wp, self.bend,
+                                    self.bow, arc=(route == "arc"))
+            return d, p0, sd, p1, ed
+
+        pts = [p0] + wp + [p1]
+        if self.corner and wp:
+            d = rounded_polyline(pts, self.corner)
+        else:
+            d = path_from_points(pts)
+        sd = (pts[1] - pts[0]) if len(pts) > 1 else Point(1, 0)
+        ed = (pts[-1] - pts[-2]) if len(pts) > 1 else Point(1, 0)
+        return d, p0, sd, p1, ed
+
+    def path_data(self, bb: BBox = None) -> str:
+        return self.geometry()[0]
+
+    def polyline(self, steps: int = 24) -> list:
+        pts: list = []
+        for poly in flatten_path(self.path_data(), steps):
+            pts.extend(poly)
+        return [Point(*p) for p in pts]
+
+    def point_at(self, t: float) -> Point:
+        """Point at fraction ``t`` (0..1) along the connector."""
+        return point_at(self.path_data(), t)[0]
+
+    def direction_at(self, t: float) -> Point:
+        return point_at(self.path_data(), t)[1]
+
+    @property
+    def mid(self) -> Point:
+        return self.point_at(0.5)
+
+    @property
+    def length(self) -> float:
+        return polyline_length(self.polyline())
+
+    def _measure(self) -> None:
+        d = self.path_data()
+        x0, y0, x1, y1 = path_bbox(d) if d else (0, 0, 0, 0)
+        self._x, self._y = x0, y0
+        self._w, self._h = x1 - x0, y1 - y0
+        if self._label is not None:
+            self._place_label()
+
+    @property
+    def local_bbox(self) -> BBox:
+        self._dirty = True          # endpoints are live; always re-measure
+        self._ensure()
+        bb = BBox(self._x, self._y, self._w or 0.0, self._h or 0.0)
+        if self._label is not None:
+            bb = bb.union(self._label.local_bbox)
+        return bb
+
+    # -- label -----------------------------------------------------------
+    @property
+    def label(self) -> Text | None:
+        self._ensure()
+        return self._label
+
+    def set_label(self, text, **style) -> "Connector":
+        if self._label is None:
+            self._label = Text(text, add=False)
+            self._label.parent = self
+            self._label.role = "label"
+        else:
+            self._label.text = text
+        if style:
+            self._label.restyle(**style)
+        return self.invalidate()
+
+    def _place_label(self) -> None:
+        p, d = point_at(self.path_data(), self.label_pos)
+        n = Point(-d.y, d.x)
+        side = str(self.label_side).lower()
+        if side in ("auto", "above", "left"):
+            if n.y > 0:
+                n = -n
+        elif side in ("below", "right"):
+            if n.y < 0:
+                n = -n
+        elif side in ("none", "on", "center"):
+            n = Point(0, 0)
+        target = p + n * self.label_offset
+        anchor = "center"
+        if abs(n.x) > abs(n.y) and n.length:
+            anchor = "w" if n.x > 0 else "e"
+        elif n.length:
+            anchor = "n" if n.y > 0 else "s"
+        self._label.at(target.x, target.y, anchor=anchor)
+
+    # -- rendering -------------------------------------------------------
+    def _render_content(self, ctx: RenderContext):
+        d, p0, sd, p1, ed = self.geometry()
+        if not d:
+            return None
+        stroke = self.prop("stroke", None)
+        stroke_w = self.prop("stroke_width", 1.5) or 1.5
+        head_kind = self._head if self._head is not None else self.prop("head")
+        tail_kind = self._tail if self._tail is not None else self.prop("tail")
+        head_size = float(self._head_size if self._head_size is not None
+                          else self.prop("head_size", 9))
+        tail_size = float(self._tail_size if self._tail_size is not None
+                          else self.prop("tail_size", head_size))
+        # heads scale a little with the line weight so they never look pinned on
+        head_size = head_size * (0.72 + 0.28 * max(1.0, float(stroke_w)))
+        tail_size = tail_size * (0.72 + 0.28 * max(1.0, float(stroke_w)))
+
+        nodes: list = []
+        head_nodes: list = []
+        trim_end = trim_start = 0.0
+        if head_kind and str(head_kind).lower() != "none":
+            hd, meta, inset = _head_geometry(head_kind, p1, ed, head_size)
+            trim_end = inset
+            head_nodes.append(_head_node(hd, meta, stroke, stroke_w, self, ctx))
+        if tail_kind and str(tail_kind).lower() != "none":
+            td, meta, inset = _head_geometry(tail_kind, p0, -sd, tail_size)
+            trim_start = inset
+            head_nodes.append(_head_node(td, meta, stroke, stroke_w, self, ctx))
+
+        if trim_start or trim_end:
+            d = _trim_path(d, trim_start, trim_end)
+
+        line_attrs = paint_attrs(self, ctx)
+        line_attrs["fill"] = "none"
+        nodes.append(Node("path", d=d, **line_attrs))
+        nodes.extend(n for n in head_nodes if n is not None)
+
+        if self._label is not None:
+            self._ensure()
+            if self.label_bg:
+                lb = self._label.local_bbox.expand((2, 4))
+                bg = self.label_bg if isinstance(self.label_bg, str) else "#ffffff"
+                nodes.append(Node("rect", x=lb.x, y=lb.y, width=lb.w,
+                                  height=lb.h, rx=3, fill=bg, stroke="none"))
+            n = self._label.render(ctx)
+            if n is not None:
+                nodes.append(n)
+        return nodes
+
+
+def _head_node(d, meta, stroke, stroke_w, el, ctx) -> Node | None:
+    color = stroke if stroke not in (None, "none") else el.prop("fill", "#000")
+    if "circle" in meta:
+        c, r = meta["circle"]
+        return Node("ellipse", cx=c.x, cy=c.y, rx=r, ry=r, fill=color,
+                    stroke="none")
+    if d is None:
+        return None
+    if meta.get("filled"):
+        return Node("path", d=d, fill=color, stroke="none")
+    return Node("path", d=d, fill="none", stroke=color, stroke_width=stroke_w,
+                stroke_linecap="round", stroke_linejoin="round")
+
+
+def _rough(ref) -> Point:
+    """A cheap point for an endpoint, used only to orient the other end."""
+    if isinstance(ref, Anchor):
+        return ref.point
+    if isinstance(ref, Element):
+        return ref.bbox.center
+    return to_point(ref)
+
+
+def _dominant_normal(p: Point, bb: BBox) -> Point:
+    """Which side of ``bb`` does point ``p`` sit on?"""
+    tol = 1e-6
+    if abs(p.x - bb.x0) < tol:
+        return Point(-1, 0)
+    if abs(p.x - bb.x1) < tol:
+        return Point(1, 0)
+    if abs(p.y - bb.y0) < tol:
+        return Point(0, -1)
+    if abs(p.y - bb.y1) < tol:
+        return Point(0, 1)
+    return Point(0, 0)
+
+
+def _elbow_points(p0: Point, n0: Point, p1: Point, n1: Point, stub: float,
+                  mode: str, waypoints: list) -> list:
+    """Orthogonal route from ``p0`` to ``p1`` honouring the exit normals."""
+    if waypoints:
+        pts = [p0]
+        prev = p0
+        for w in waypoints:
+            pts.extend(_ortho_pair(prev, w))
+            prev = w
+        pts.extend(_ortho_pair(prev, p1))
+        pts.append(p1)
+        return _dedupe(pts)
+
+    if n0.length == 0 and n1.length == 0:
+        n0, n1 = _infer_normals(p0, p1, mode)
+    elif n0.length == 0:
+        n0 = -n1 if abs(n1.x) > abs(n1.y) else -n1
+    elif n1.length == 0:
+        n1 = -n0
+
+    a = p0 + n0 * stub
+    b = p1 + n1 * stub
+    h0 = abs(n0.x) > abs(n0.y)
+    h1 = abs(n1.x) > abs(n1.y)
+
+    if h0 and h1:
+        mx = (a.x + b.x) / 2.0
+        pts = [p0, a, Point(mx, a.y), Point(mx, b.y), b, p1]
+    elif (not h0) and (not h1):
+        my = (a.y + b.y) / 2.0
+        pts = [p0, a, Point(a.x, my), Point(b.x, my), b, p1]
+    elif h0 and not h1:
+        pts = [p0, a, Point(b.x, a.y), b, p1]
+    else:
+        pts = [p0, a, Point(a.x, b.y), b, p1]
+    return _dedupe(pts)
+
+
+def _ortho_pair(a: Point, b: Point) -> list:
+    b = to_point(b)
+    if abs(b.x - a.x) < 1e-9 or abs(b.y - a.y) < 1e-9:
+        return []
+    return [Point(b.x, a.y)]
+
+
+def _infer_normals(p0: Point, p1: Point, mode: str) -> tuple:
+    dx, dy = p1.x - p0.x, p1.y - p0.y
+    horizontal_first = abs(dx) >= abs(dy)
+    if mode == "hv":
+        horizontal_first = True
+    elif mode == "vh":
+        horizontal_first = False
+    if horizontal_first:
+        n0 = Point(1 if dx >= 0 else -1, 0)
+        n1 = Point(0, -1 if dy >= 0 else 1)
+    else:
+        n0 = Point(0, 1 if dy >= 0 else -1)
+        n1 = Point(-1 if dx >= 0 else 1, 0)
+    return n0, n1
+
+
+def _dedupe(pts: list) -> list:
+    out = [pts[0]]
+    for p in pts[1:]:
+        if abs(p.x - out[-1].x) > 1e-7 or abs(p.y - out[-1].y) > 1e-7:
+            out.append(p)
+    return out
+
+
+def _curve_path(p0: Point, n0: Point, p1: Point, n1: Point, waypoints: list,
+                bend: float, bow: float = 0.0, arc: bool = False) -> tuple:
+    """Build the curve.
+
+    ``bend`` deepens the bow: when the endpoints are anchors (so we know which
+    way they face) it lengthens the handles *along those normals*; for plain
+    points there is no normal to follow, so it bows sideways instead.
+    ``bow`` always displaces sideways, positive = left of travel.
+    """
+    chord = p1 - p0
+    dist = chord.length or 1.0
+    if waypoints:
+        pts = [p0] + waypoints + [p1]
+        return _catmull_rom(pts), (waypoints[0] - p0), (p1 - waypoints[-1])
+
+    left = Point(chord.y, -chord.x).normalized()   # left of travel (y is down)
+
+    if arc or (n0.length == 0 and n1.length == 0):
+        b = bend + bow if (bend or bow) else 0.25
+        mid = p0.lerp(p1, 0.5) + left * (dist * b)
+        d = (f"M{fmt(p0.x)} {fmt(p0.y)}Q{fmt(mid.x)} {fmt(mid.y)} "
+             f"{fmt(p1.x)} {fmt(p1.y)}")
+        return d, (mid - p0), (p1 - mid)
+
+    # Handle reach follows how well each exit normal lines up with the chord:
+    # a sideways exit gets a short handle so the curve stays tidy.
+    u = chord.normalized()
+    d0 = n0 if n0.length else u
+    d1 = n1 if n1.length else -u
+    reach = max(0.18, abs(bend))
+    k0 = min(dist * 0.9, max(10.0, dist * 0.55 * max(abs(u.dot(d0)), reach)))
+    k1 = min(dist * 0.9, max(10.0, dist * 0.55 * max(abs((-u).dot(d1)), reach)))
+    c0 = p0 + d0 * k0
+    c1 = p1 + d1 * k1
+    if bow:
+        c0 = c0 + left * (dist * bow * 0.6)
+        c1 = c1 + left * (dist * bow * 0.6)
+    d = (f"M{fmt(p0.x)} {fmt(p0.y)}C{fmt(c0.x)} {fmt(c0.y)} "
+         f"{fmt(c1.x)} {fmt(c1.y)} {fmt(p1.x)} {fmt(p1.y)}")
+    return d, (c0 - p0), (p1 - c1)
+
+
+def _catmull_rom(points: list, tension: float = 0.5) -> str:
+    """Smooth cubic spline through all the points."""
+    pts = [to_point(p) for p in points]
+    if len(pts) < 3:
+        return path_from_points(pts)
+    ext = [pts[0]] + pts + [pts[-1]]
+    parts = [f"M{fmt(pts[0].x)} {fmt(pts[0].y)}"]
+    for i in range(1, len(ext) - 2):
+        p0, p1, p2, p3 = ext[i - 1], ext[i], ext[i + 1], ext[i + 2]
+        c1 = p1 + (p2 - p0) * (tension / 3.0)
+        c2 = p2 - (p3 - p1) * (tension / 3.0)
+        parts.append(f"C{fmt(c1.x)} {fmt(c1.y)} {fmt(c2.x)} {fmt(c2.y)} "
+                     f"{fmt(p2.x)} {fmt(p2.y)}")
+    return "".join(parts)
+
+
+def _trim_path(d: str, start: float, end: float) -> str:
+    """Shorten a path from both ends so arrow heads sit flush."""
+    polys = flatten_path(d, 28)
+    if not polys:
+        return d
+    pts = [Point(*p) for p in polys[0]]
+    for poly in polys[1:]:
+        pts.extend(Point(*p) for p in poly)
+    if len(pts) < 2:
+        return d
+    total = polyline_length(pts)
+    if total <= start + end + 0.5:
+        return ""
+    if start > 0:
+        pts = _cut(pts, start, from_start=True)
+    if end > 0:
+        pts = _cut(pts, end, from_start=False)
+    return path_from_points(pts)
+
+
+def _cut(pts: list, amount: float, from_start: bool) -> list:
+    work = list(pts) if from_start else list(reversed(pts))
+    acc = 0.0
+    for i in range(len(work) - 1):
+        seg = work[i].distance_to(work[i + 1])
+        if acc + seg >= amount:
+            t = (amount - acc) / seg if seg else 0.0
+            new_pt = work[i].lerp(work[i + 1], t)
+            out = [new_pt] + work[i + 1:]
+            return out if from_start else list(reversed(out))
+        acc += seg
+    return pts
+
+
+# ==========================================================================
+# Friendly constructors
+# ==========================================================================
+
+def arrow(start, end, **kw) -> Connector:
+    """A straight arrow from ``start`` to ``end``.
+
+    >>> arrow(fe.e, fm.w)
+    >>> arrow(box_a, box_b, head="stealth", label="loss")
+    """
+    kw.setdefault("route", "straight")
+    return Connector(start, end, **kw)
+
+
+def line(start, end, **kw) -> Connector:
+    """A plain line (no arrow head)."""
+    kw.setdefault("route", "straight")
+    kw.setdefault("head", "none")
+    return Connector(start, end, **kw)
+
+
+def elbow(start, end, stub: float = 14.0, **kw) -> Connector:
+    """An orthogonal ``-|`` style connector with a straight ``stub`` at each end."""
+    kw.setdefault("route", "elbow")
+    return Connector(start, end, stub=stub, **kw)
+
+
+def curve(start, end, bend: float = 0.0, **kw) -> Connector:
+    """A smooth curve between two endpoints.
+
+    ``bend`` deepens the bow — following the anchors' facing direction when
+    you connect anchors (``a.s`` leaves downward), or sideways for plain
+    points.  ``bow=`` always pushes sideways (positive = left of travel), and
+    ``waypoints=[...]`` routes the curve through specific points.
+    """
+    kw.setdefault("route", "curve")
+    return Connector(start, end, bend=bend, **kw)
+
+
+def connect(start, end, route: str = "straight", **kw) -> Connector:
+    """Generic entry point: ``route`` is straight / elbow / curve / arc."""
+    return Connector(start, end, route=route, **kw)
+
+
+def double_arrow(start, end, **kw) -> Connector:
+    """An arrow with heads on both ends."""
+    kw.setdefault("tail", kw.get("head", "triangle"))
+    return Connector(start, end, **kw)
