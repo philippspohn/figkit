@@ -292,6 +292,8 @@ Stadium = Pill
 # ==========================================================================
 
 class Ellipse(Shape):
+    """An ellipse that grows to fit its label."""
+
     role = "ellipse"
     default_padding = (10, 18)
 
@@ -385,33 +387,45 @@ class _PolyShape(Shape):
 
 
 class Diamond(_PolyShape):
+    """A rhombus — the decision node of a flow chart."""
+
     points_uv = ((0.5, 0.0), (1.0, 0.5), (0.5, 1.0), (0.0, 0.5))
     inset = (0.7, 0.7)
 
 
 class Triangle(_PolyShape):
+    """An upward-pointing triangle."""
+
     points_uv = ((0.5, 0.0), (1.0, 1.0), (0.0, 1.0))
     inset = (0.5, 0.25)
 
 
 class Hexagon(_PolyShape):
+    """A flat-topped hexagon, often used for a preparation or gate step."""
+
     points_uv = ((0.25, 0.0), (0.75, 0.0), (1.0, 0.5),
                  (0.75, 1.0), (0.25, 1.0), (0.0, 0.5))
     inset = (0.3, 0.0)
 
 
 class Parallelogram(_PolyShape):
+    """A slanted box — conventionally input or output."""
+
     points_uv = ((0.18, 0.0), (1.0, 0.0), (0.82, 1.0), (0.0, 1.0))
     inset = (0.25, 0.0)
 
 
 class Chevron(_PolyShape):
+    """An arrow-shaped block, for stages that chain left to right."""
+
     points_uv = ((0.0, 0.0), (0.82, 0.0), (1.0, 0.5), (0.82, 1.0),
                  (0.0, 1.0), (0.18, 0.5))
     inset = (0.3, 0.0)
 
 
 class Star(_PolyShape):
+    """An n-pointed star. ``inner`` sets how deep the notches cut."""
+
     def __init__(self, text=None, x=0.0, y=0.0, points: int = 5,
                  inner: float = 0.42, **kw):
         self.n_points = int(points)

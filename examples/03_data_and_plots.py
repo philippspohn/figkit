@@ -84,5 +84,8 @@ with Figure(pad=26, background="#ffffff") as fig:
         .right_of(m, gap=14).align_to(m, "center_y")
 
 fig.save("out/03_data_and_plots.svg")
-fig.save("out/03_data_and_plots.png", scale=2)
+# PNG needs a rasteriser (cairosvg, rsvg-convert, resvg, …); the SVG
+# above is always written, so skip quietly when none is installed.
+if any(available_backends().values()):
+    fig.save("out/03_data_and_plots.png", scale=2)
 print(fig)

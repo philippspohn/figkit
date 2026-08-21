@@ -16,7 +16,8 @@ __all__ = [
     "align", "align_h", "align_v", "distribute_h", "distribute_v",
     "spread_h", "spread_v", "hstack", "vstack", "grid", "fit", "frame_around",
     "between", "midpoint", "center_on", "group", "bbox_of", "circular",
-    "same_width", "same_height", "same_size", "shift",
+    "same_width", "same_height", "same_size", "shift", "baseline_of",
+    "brace_around",
 ]
 
 _EDGE_AXIS = {
@@ -211,8 +212,14 @@ def hstack(items, gap: float = 16.0, align: str = "center", at=None,
            pad=None, panel=False, name: str = None, **panel_style) -> Group:
     """Place items in a row and return them as a movable :class:`Group`.
 
+    ``align`` is ``center`` / ``top`` / ``bottom``, or ``"baseline"`` to set
+    the items like an equation: text baselines line up, and items without text
+    (a matrix, an image) centre on the maths axis.
+
     >>> row = hstack([a, b, c], gap=20, align="top")
     >>> row.right_of(title, gap=30)
+    >>> formula = hstack([Text("$C =$"), matrix, Text("$\\phi$")],
+    ...                  gap=8, align="baseline")
     """
     els = [e for e in _iter(items) if isinstance(e, Element)]
     if not els:
@@ -245,14 +252,70 @@ def vstack(items, gap: float = 12.0, align: str = "center", at=None,
     return Group(*els, name=name)
 
 
+def baseline_of(element) -> float:
+    """The first text baseline inside ``element``, or ``None`` if it has none.
+
+    Looks through shapes to their labels and through groups to their first
+    baselined descendant, so a box, a bare label and a component all answer.
+    """
+    from .text import Text
+    if isinstance(element, Text):
+        return element.first_baseline
+    label = getattr(element, "label", None)
+    if isinstance(label, Text):
+        return label.first_baseline
+    for child in getattr(element, "_children", ()):
+        found = baseline_of(child)
+        if found is not None:
+            return found
+    return None
+
+
+def _math_axis(element, baseline: float) -> float:
+    """Half an x-height above the baseline — where a formula's centre sits."""
+    from .fonts import get_font
+    from .text import Text
+    ref = element if isinstance(element, Text) else getattr(element, "label", None)
+    if ref is None:
+        return baseline
+    size = float(ref.prop("font_size", 14) or 14)
+    metrics = get_font(ref.prop("font_family"), ref.prop("font_weight"),
+                       ref.prop("font_style")).metrics
+    return baseline - (metrics.x_height or 0.5) * size / 2.0
+
+
+def _align_baselines(els) -> None:
+    """Line items up on their text baseline, as an equation would be set.
+
+    Items with no text of their own (a matrix, an image) are centred on the
+    maths axis instead, which is what reads correctly beside a symbol.
+    """
+    found = [(el, baseline_of(el)) for el in els]
+    reference = next(((el, b) for el, b in found if b is not None), None)
+    if reference is None:
+        ref_box = bbox_of(els)
+        for el in els:
+            el.move(0, ref_box.cy - el.bbox.cy)
+        return
+    ref_el, ref_baseline = reference
+    axis = _math_axis(ref_el, ref_baseline)
+    for el, baseline in found:
+        if baseline is not None:
+            el.move(0, ref_baseline - baseline)
+        else:
+            el.move(0, axis - el.bbox.cy)
+
+
 def _align_cross(els, how: str, horizontal: bool) -> None:
     if not how or str(how).lower() in ("none", "keep"):
         return
     a = str(how).lower()
+    if horizontal and a == "baseline":
+        _align_baselines(els)
+        return
     if horizontal:
         edge = {"top": "top", "n": "top", "bottom": "bottom", "s": "bottom",
-                "center": "center_y", "middle": "center_y",
-                "baseline": "center_y"}.get(a)
+                "center": "center_y", "middle": "center_y"}.get(a)
     else:
         edge = {"left": "left", "w": "left", "right": "right", "e": "right",
                 "center": "center_x", "middle": "center_x"}.get(a)
@@ -351,6 +414,33 @@ def frame_around(items, pad=16, **style) -> Panel:
     return Panel(els, pad=pad, **style)
 
 
+def brace_around(items, side: str = "top", gap: float = 8.0,
+                 depth: float = 10.0, label=None, pad: float = 0.0,
+                 **kw):
+    """A :class:`~figkit.components.Brace` spanning a set of elements.
+
+    >>> brace_around([a, b, c], side="top", label="encoder")
+    """
+    from .components import Brace
+    box = bbox_of(items).expand(pad)
+    s = str(side).lower()
+    if s in ("top", "n", "above"):
+        start, end = (box.x0, box.y0 - gap), (box.x1, box.y0 - gap)
+        facing = "up"
+    elif s in ("bottom", "s", "below"):
+        start, end = (box.x1, box.y1 + gap), (box.x0, box.y1 + gap)
+        facing = "down"
+    elif s in ("left", "w"):
+        start, end = (box.x0 - gap, box.y0), (box.x0 - gap, box.y1)
+        facing = "left"
+    elif s in ("right", "e"):
+        start, end = (box.x1 + gap, box.y1), (box.x1 + gap, box.y0)
+        facing = "right"
+    else:
+        raise ValueError(f"side={side!r}; use top/bottom/left/right")
+    return Brace(start, end, depth=depth, side=facing, label=label, **kw)
+
+
 def group(*items, name: str = None, **kw) -> Group:
     """Bundle elements into a :class:`Group`."""
     return Group(*[e for e in _iter(items)], name=name, **kw)
@@ -412,6 +502,7 @@ def shift(items, dx: float = 0.0, dy: float = 0.0) -> list:
 
 
 def same_width(items, width: float = None, anchor: str = "center") -> list:
+    """Give every item the same width (the widest, unless ``width`` is given)."""
     els = [e for e in _iter(items) if isinstance(e, Element)]
     if not els:
         return els
@@ -422,6 +513,7 @@ def same_width(items, width: float = None, anchor: str = "center") -> list:
 
 
 def same_height(items, height: float = None, anchor: str = "center") -> list:
+    """Give every item the same height (the tallest, unless given)."""
     els = [e for e in _iter(items) if isinstance(e, Element)]
     if not els:
         return els
@@ -432,5 +524,6 @@ def same_height(items, height: float = None, anchor: str = "center") -> list:
 
 
 def same_size(items, anchor: str = "center") -> list:
+    """Give every item the same width *and* height."""
     same_width(items, anchor=anchor)
     return same_height(items, anchor=anchor)

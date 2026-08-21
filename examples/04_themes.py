@@ -48,5 +48,8 @@ with Figure(pad=22, background="#eef0f3") as fig:
          cols=2, gap=(24, 24), align="nw")
 
 fig.save("out/04_themes.svg")
-fig.save("out/04_themes.png", scale=2)
+# PNG needs a rasteriser (cairosvg, rsvg-convert, resvg, …); the SVG
+# above is always written, so skip quietly when none is installed.
+if any(available_backends().values()):
+    fig.save("out/04_themes.png", scale=2)
 print(fig)

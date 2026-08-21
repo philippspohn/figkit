@@ -79,6 +79,7 @@ def set_latex_preamble(preamble: str) -> None:
 
 
 def math_available() -> bool:
+    """True when the built-in ``mathtext`` backend can be used."""
     try:
         import matplotlib  # noqa: F401  (import is the availability check)
         return True
@@ -87,6 +88,7 @@ def math_available() -> bool:
 
 
 def latex_available() -> bool:
+    """True when a real ``latex`` + ``dvisvgm`` toolchain is on PATH."""
     return bool(shutil.which("latex") and shutil.which("dvisvgm"))
 
 

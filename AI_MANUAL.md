@@ -45,6 +45,9 @@ problem with coordinates, and `no issues` when the figure is clean.
   text plus padding; `Box("hello", w=200)` pins the width and wraps the text.
 * **Paint order = child order** (later draws on top). `z=` sorts within a
   parent; `to_front()` / `to_back()` reorder.
+* **A figure auto-sizes to its contents.** Giving both `w` and `h` makes it a
+  fixed canvas whose origin is `(0, 0)`, so coordinates mean what they say;
+  pass `origin=` to move it or `origin="content"` for the auto-sized rule.
 * **Create the `Figure` first**, then the elements. Elements resolve their
   theme through their parent, so `with Figure(theme=T) as fig:` makes `T`
   apply to everything created inside. (The ambient figure and theme live in
@@ -57,8 +60,10 @@ problem with coordinates, and `no issues` when the figure is clean.
 | Need | Call |
 |---|---|
 | canvas | `Figure(w=None, h=None, pad=24, background=None, theme=None)` |
+| fixed canvas | `Figure(764, 620, pad=0)` — origin is `(0, 0)` |
 | box with text | `Box("label", w=..., h=..., style="blue")` |
 | plain text | `Text("hi", bold=True, font_size=16, align="left")` |
+| styled spans | `Text(["ok ", Span("bad", color="@bad", strike=True)])` |
 | math | put `$...$` anywhere in a string: `Box("$F_{\mathcal{M}}$")` |
 | absolute place | `el.at(x, y, anchor="nw")`, `el.center_at(x, y)` |
 | relative place | `el.right_of(other, gap=24, align="top", dx=0, dy=0)` |
@@ -72,8 +77,11 @@ problem with coordinates, and `no issues` when the figure is clean.
 | align a group | `align([a, b, c], "top")` |
 | even spacing | `distribute_h(items, gap=20)` / `spread_h(items, x0, x1)` |
 | row / column | `hstack(items, gap=16, align="center")` / `vstack(...)` |
+| formula row | `hstack([lhs, matrix, rhs], gap=8, align="baseline")` |
 | grid | `grid(items, cols=3, gap=(20, 14))` |
 | container box | `fit(a, b, pad=20, label="stage 1", dash=True)` |
+| self-loop | `self_loop(state, side="top", label="retry")` |
+| brace over a set | `brace_around([a, b, c], side="top", label="stage")` |
 | midpoint | `between(a, b)` |
 | bounds only | `bbox_of([a, b, c])` |
 | data space | `fr = Frame(w=400, h=220, xlim=(0,10), ylim=(0,1))`; `fr.pt(x, y)` |
@@ -174,6 +182,7 @@ whatever they were built from.
 **Content** — `Text`, `Label`, `Image(path_or_bytes, w=...)`.
 
 **Composites** — `Matrix(values, cell=16, cmap="viridis")`,
+`LabelledMatrix(values, row_label=…, col_label=…, caption=…, brackets="round")`,
 `Vector(values, orient="v")`, `ColorBar`, `Table(rows, header=True)`,
 `Legend([(label, colour), …])`, `Brace(a, b, depth=12, label=...)`,
 `Bracket`, `Panel(targets, pad, label)`, `Spacer(w, h)`, `Group(*children)`.
@@ -192,6 +201,20 @@ Text("wrapped prose …", wrap=260, line_height=1.4)
 Text("plain **bold** and *italic*", markup=True)     # opt-in markdown-lite
 Box("$C_{\\mathcal{MN}} = \\phi^{\\dagger}\\Pi\\phi$")   # inline math anywhere
 ```
+
+**Spans** style part of a line. Pass a list wherever text is accepted —
+including a `Box` label:
+
+```python
+Text(["accuracy ", Span("76.1", strike=True, color="@muted"), " → ",
+      Span("94.6", color="@good", bold=True)])
+Box(["status: ", Span("FAILED", color="#fff", bold=True)], fill="@bad")
+```
+
+`Span(text, color=, bold=, italic=, weight=, style=, size=, family=,
+strike=, underline=)` — anything left unset is inherited. Strike-through and
+underline are drawn as geometry, so they survive rasterising and outlining
+(`text-decoration` does not).
 
 * `$...$` spans are typeset with matplotlib's mathtext and emitted as **vector
   outlines**, so exported files never depend on installed fonts. Escape a
@@ -239,6 +262,9 @@ b.s, bend=0.5)` dips below both boxes. For plain points there is no normal to
 follow so it bows sideways. `bow=` always pushes sideways (positive = left of
 travel).
 
+`self_loop(element, side="top", size=36, label="retry")` draws an arrow that
+leaves an element and returns to it — the staple of state machines.
+
 Useful readouts: `c.point_at(t)`, `c.direction_at(t)`, `c.mid`, `c.length`.
 
 Data-driven edges are just a loop:
@@ -251,7 +277,29 @@ for src, dst, weight in edges:
 
 ---
 
-## 8. Layout helpers
+## 8. Reusable components
+
+A function returning a `Group` is a fine component. Subclass `Component` when
+callers should be able to point at named parts of it:
+
+```python
+class Stage(Component):
+    def build(self, title, w=150):          # group kwargs never reach build()
+        body = Box(title, w=w, style="block")
+        self.expose("body", body)
+        self.expose("out", Dot(body.e, r=4).center)
+        return [body]
+
+a = Stage("Encode")
+b = Stage("Solve", name="solver").right_of(a, gap=60)
+arrow(a.out, b.body.w)                       # exposed anchors are live
+```
+
+`expose(name, anchor_or_element_or_callable)`; read them as attributes or via
+`component.anchor(name)`. A `Component` is an ordinary `Group`, so it places,
+moves and audits like anything else.
+
+## 9. Layout helpers
 
 ```python
 align([a, b, c], "top", to=None)         # top|bottom|left|right|center_x|center_y|center
@@ -262,6 +310,7 @@ vstack(items, gap=12, align="left")      # -> Group
 grid(items, cols=3, gap=(20, 14), align="nw")
 fit(a, b, pad=20, label="stage", label_pos="nw")   # -> Group; .panel is the box
 frame_around(items, pad=12)              # just the tracking box
+brace_around(items, side="top", gap=8, label="stage")
 same_width(items); same_height(items); same_size(items)
 center_on(el, target); between(a, b, t=0.5); shift(items, dx, dy)
 circular(items, center=(0,0), radius=140)
@@ -274,7 +323,7 @@ targets, so it re-fits if they move later.
 
 ---
 
-## 9. Styling and themes
+## 10. Styling and themes
 
 Resolution order for any property, innermost first:
 
@@ -335,7 +384,7 @@ colormap("viridis", t), palette("figkit", n), to_hex`.
 
 ---
 
-## 10. Data-driven graphics
+## 11. Data-driven graphics
 
 ```python
 fr = Frame(w=430, h=240, xlim=(0, 50), ylim=(0.35, 1.0))   # a Group + a mapping
@@ -366,7 +415,7 @@ marks to the plot area.
 
 ---
 
-## 11. Images
+## 12. Images
 
 ```python
 Image("logo.svg", w=80)        # SVGs are inlined as vectors (ids namespaced)
@@ -380,7 +429,7 @@ source dimensions.
 
 ---
 
-## 12. Export
+## 13. Export
 
 ```python
 fig.save("f.svg")                     # native, self-contained
@@ -402,7 +451,7 @@ Install: `pip install figkit` · `figkit[latex]` (math) · `figkit[export]`
 
 ---
 
-## 13. Checking your work: `fig.audit()`
+## 14. Checking your work: `fig.audit()`
 
 ```python
 report = fig.audit()
@@ -441,7 +490,7 @@ fig.audit(overlap="all")                        # stricter: every partial overla
 fig.audit(min_contrast=4.5)                     # WCAG AA for body text
 ```
 
-## 14. Gotchas
+## 15. Gotchas
 
 1. **`Group` takes ownership.** `Group(a, b)` and `fit(a, b)` *reparent* their
    children. To only read a combined bounding box, use `bbox_of([a, b])`.
@@ -476,7 +525,7 @@ fig.audit(min_contrast=4.5)                     # WCAG AA for body text
 
 ---
 
-## 15. Worked pattern
+## 16. Worked pattern
 
 ```python
 from figkit import *

@@ -35,20 +35,23 @@ from .themes import (BLUEPRINT, DARK, MINIMAL, PAPER, SLIDE, SOFT, THEMES,
 from .core import Anchor, Element, Group
 
 # -- content ----------------------------------------------------------------
-from .text import Label, Text, layout_text, measure_block
+from .text import Label, Span, Text, layout_text, measure_block
 from .shapes import (Box, Chevron, Circle, Cylinder, Diamond, Dot, Ellipse,
                      Hexagon, Line, Marker, Parallelogram, Path, Pill, Polygon,
                      Polyline, Rect, Shape, Stadium, Star, Triangle, Note)
 from .image import Image
-from .components import (Bracket, Brace, Callout, ColorBar, Heatmap, Legend,
-                         Matrix, Panel, Spacer, Table, Vector)
+from .component import Component
+from .components import (Bracket, Brace, Callout, ColorBar, Heatmap,
+                         LabelledMatrix, Legend, Matrix, Panel, Spacer,
+                         Table, Vector)
 
 # -- connectors -------------------------------------------------------------
-from .connectors import (Connector, arrow, connect, curve, double_arrow, elbow,
-                         line)
+from .connectors import (Connector, arrow, connect, curve, double_arrow,
+                         elbow, line, self_loop)
 
 # -- layout -----------------------------------------------------------------
-from .layout import (align, align_h, align_v, between, bbox_of, center_on,
+from .layout import (align, align_h, align_v, baseline_of, between, bbox_of,
+                     brace_around, center_on,
                      circular, distribute_h, distribute_v, fit, frame_around,
                      grid, group, hstack, midpoint, same_height, same_size,
                      same_width, shift, spread_h, spread_v, vstack)
@@ -83,19 +86,21 @@ __all__ = [
     # core
     "Element", "Group", "Anchor",
     # content
-    "Text", "Label", "layout_text", "measure_block",
+    "Text", "Label", "Span", "layout_text", "measure_block",
     "Shape", "Box", "Rect", "Pill", "Stadium", "Ellipse", "Circle", "Diamond",
     "Triangle", "Hexagon", "Parallelogram", "Chevron", "Star", "Cylinder",
     "Note", "Path", "Polygon", "Polyline", "Line", "Dot", "Marker",
     "Image", "Matrix", "Vector", "Heatmap", "ColorBar", "Panel", "Brace",
-    "Bracket", "Legend", "Table", "Callout", "Spacer",
+    "Bracket", "Legend", "Table", "Callout", "Spacer", "Component",
+    "LabelledMatrix",
     # connectors
     "Connector", "arrow", "line", "elbow", "curve", "connect", "double_arrow",
+    "self_loop",
     # layout
     "align", "align_h", "align_v", "distribute_h", "distribute_v", "spread_h",
     "spread_v", "hstack", "vstack", "grid", "fit", "frame_around", "between",
     "midpoint", "center_on", "group", "bbox_of", "circular", "same_width",
-    "same_height", "same_size", "shift",
+    "same_height", "same_size", "shift", "baseline_of", "brace_around",
     # data
     "Frame", "nice_ticks",
     # fonts / math

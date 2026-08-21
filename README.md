@@ -46,8 +46,11 @@ pip install "figkit[all]"       # everything
 ```
 
 Only `fonttools` is required — it's what makes text measurement (and therefore
-layout) accurate. PNG/PDF export also works with `rsvg-convert`, `resvg`,
-`inkscape` or headless Chromium if you'd rather not install cairo.
+layout) accurate. The extras degrade rather than break: without `matplotlib`
+an inline `$formula$` is set as plain text with a warning, and without a
+rasteriser `save("f.png")` raises while SVG and HTML keep working. PNG/PDF
+export also accepts `rsvg-convert`, `resvg`, `inkscape` or headless Chromium
+if you'd rather not install cairo.
 
 ---
 
@@ -140,6 +143,13 @@ A coordinate frame, a legend, a table, a brace and a heatmap with a colour bar.
 
 ![plots](docs/images/03_data_and_plots.png)
 
+### `05_rich_text_and_components.py` — spans, components and formulas
+
+Per-word colour and strike-through, a `Component` publishing named ports, and
+`LabelledMatrix` set as an equation with `hstack(align="baseline")`.
+
+![rich text](docs/images/05_rich_text_and_components.png)
+
 ### `04_themes.py` — one diagram, seven themes
 
 Not a single colour is set on an element — the theme cascade decides
@@ -156,11 +166,11 @@ everything.
 | **Canvas** | `Figure(w, h, pad, background, theme)`, `fig.save(...)`, `fig.to_svg()` |
 | **Shapes** | `Box` `Pill` `Ellipse` `Circle` `Diamond` `Triangle` `Hexagon` `Parallelogram` `Chevron` `Star` `Cylinder` `Note` `Callout` |
 | **Geometry** | `Line` `Polyline` `Polygon` `Path` `Dot` `Marker` |
-| **Content** | `Text` `Label` `Image` |
-| **Composites** | `Matrix` `Vector` `ColorBar` `Table` `Legend` `Brace` `Bracket` `Panel` `Group` `Spacer` |
-| **Connectors** | `arrow` `line` `elbow` `curve` `connect` `double_arrow` |
+| **Content** | `Text` `Label` `Span` (per-word colour / strike / underline) `Image` |
+| **Composites** | `Matrix` `LabelledMatrix` `Vector` `ColorBar` `Table` `Legend` `Brace` `Bracket` `Panel` `Group` `Spacer` `Component` |
+| **Connectors** | `arrow` `line` `elbow` `curve` `connect` `double_arrow` `self_loop` |
 | **Placement** | `at` `move` `center_at` `right_of` `left_of` `above_of` `below_of` `inside` `align_to` `span_x` `resize` `rotate` |
-| **Layout** | `align` `distribute_h/v` `spread_h/v` `hstack` `vstack` `grid` `fit` `between` `center_on` `circular` `same_size` `bbox_of` |
+| **Layout** | `align` `distribute_h/v` `spread_h/v` `hstack` (incl. `align="baseline"`) `vstack` `grid` `fit` `brace_around` `between` `center_on` `circular` `same_size` `bbox_of` |
 | **Data** | `Frame` (`pt` `line` `scatter` `bars` `area_fill` `region` `axes` `gridlines`), `nice_ticks` |
 | **Checking** | `fig.audit()` → `Report` (`overlap` `overflow` `contrast` `crossing` `degenerate` `offscreen`), `el.ignore_audit()` |
 | **Style** | `Style` `Theme` `use_theme`, classes (`classes=`, `add_class`), themes `PAPER` `SLIDE` `DARK` `BLUEPRINT` `MINIMAL` `SOFT` |
@@ -192,9 +202,14 @@ Anchors on every element: `n s e w ne nw se sw center`, plus `at_angle(deg)`,
 
 ```bash
 pip install -e ".[dev]"
-pytest                       # 216 tests; every example must audit clean
+pytest                       # 277 tests; every example must audit clean
+python -m pyflakes figkit
 python examples/01_pipeline.py
 ```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for what the test suite expects — in
+particular, that new audit checks come with tests for the cases they must
+*not* report.
 
 ## License
 

@@ -18,7 +18,7 @@ from .text import Text
 
 __all__ = [
     "Connector", "arrow", "line", "elbow", "curve", "connect", "double_arrow",
-    "PathAnchor", "HEADS",
+    "self_loop", "PathAnchor", "HEADS",
 ]
 
 HEADS = ("triangle", "stealth", "open", "vee", "circle", "dot", "diamond",
@@ -350,18 +350,26 @@ class Connector(Element):
 
         nodes: list = []
         head_nodes: list = []
-        trim_end = trim_start = 0.0
-        if head_kind and str(head_kind).lower() != "none":
-            hd, meta, inset = _head_geometry(head_kind, p1, ed, head_size)
-            trim_end = inset
-            head_nodes.append(_head_node(hd, meta, stroke, stroke_w, self, ctx))
-        if tail_kind and str(tail_kind).lower() != "none":
-            td, meta, inset = _head_geometry(tail_kind, p0, -sd, tail_size)
-            trim_start = inset
-            head_nodes.append(_head_node(td, meta, stroke, stroke_w, self, ctx))
+        has_head = bool(head_kind) and str(head_kind).lower() != "none"
+        has_tail = bool(tail_kind) and str(tail_kind).lower() != "none"
 
+        # How far back the stroke has to stop for each head to cover its end.
+        trim_end = _head_inset(head_kind, head_size) if has_head else 0.0
+        trim_start = _head_inset(tail_kind, tail_size) if has_tail else 0.0
         if trim_start or trim_end:
             d = _trim_path(d, trim_start, trim_end)
+
+        # Point each head from where the stroke now ends toward the tip, rather
+        # than along the tangent at the tip. On a curve those differ, and using
+        # the tangent lets the stroke escape sideways from under the head.
+        if has_head:
+            ed = _aim(d, p1, ed, at_start=False)
+            hd, meta, _ = _head_geometry(head_kind, p1, ed, head_size)
+            head_nodes.append(_head_node(hd, meta, stroke, stroke_w, self, ctx))
+        if has_tail:
+            sd = -_aim(d, p0, -sd, at_start=True)
+            td, meta, _ = _head_geometry(tail_kind, p0, -sd, tail_size)
+            head_nodes.append(_head_node(td, meta, stroke, stroke_w, self, ctx))
 
         line_attrs = paint_attrs(self, ctx)
         line_attrs["fill"] = "none"
@@ -379,6 +387,24 @@ class Connector(Element):
             if n is not None:
                 nodes.append(n)
         return nodes
+
+
+def _head_inset(kind: str, size: float) -> float:
+    """How far short of the tip the stroke must stop for this head shape."""
+    _d, _meta, inset = _head_geometry(kind, Point(0, 0), Point(1, 0), size)
+    return inset
+
+
+def _aim(d: str, tip: Point, fallback: Point, at_start: bool) -> Point:
+    """Direction from the (already trimmed) stroke end toward ``tip``."""
+    if not d:
+        return fallback
+    polys = flatten_path(d, 8)
+    if not polys or not polys[0]:
+        return fallback
+    end = Point(*(polys[0][0] if at_start else polys[-1][-1]))
+    direction = tip - end
+    return direction.normalized() if direction.length > 1e-6 else fallback
 
 
 def _head_node(d, meta, stroke, stroke_w, el, ctx) -> Node | None:
@@ -627,3 +653,37 @@ def double_arrow(start, end, **kw) -> Connector:
     """An arrow with heads on both ends."""
     kw.setdefault("tail", kw.get("head", "triangle"))
     return Connector(start, end, **kw)
+
+
+def self_loop(element, side: str = "top", size: float = 36.0,
+              spread: float = 0.45, **kw) -> Connector:
+    """An arrow that leaves one element and comes back to it.
+
+    The staple of state machines and recurrent blocks. ``side`` picks the edge
+    it bulges from, ``size`` how far out it goes and ``spread`` how far apart
+    its feet sit, as a fraction of that edge.
+
+    >>> self_loop(state, side="top", label="retry")
+    """
+    box = element.bbox
+    half = max(0.02, min(0.9, float(spread))) / 2.0
+    s = str(side).lower()
+    if s in ("top", "n", "up"):
+        start, end = box.uv(0.5 - half, 0.0), box.uv(0.5 + half, 0.0)
+        apex = Point(box.cx, box.y0 - size)
+    elif s in ("bottom", "s", "down"):
+        start, end = box.uv(0.5 + half, 1.0), box.uv(0.5 - half, 1.0)
+        apex = Point(box.cx, box.y1 + size)
+    elif s in ("left", "w"):
+        start, end = box.uv(0.0, 0.5 + half), box.uv(0.0, 0.5 - half)
+        apex = Point(box.x0 - size, box.cy)
+    elif s in ("right", "e"):
+        start, end = box.uv(1.0, 0.5 - half), box.uv(1.0, 0.5 + half)
+        apex = Point(box.x1 + size, box.cy)
+    else:
+        raise ValueError(f"side={side!r}; use top/bottom/left/right")
+    kw.setdefault("route", "curve")
+    # Put any label outside the loop rather than inside its arc.
+    kw.setdefault("label_side", {"bottom": "below", "s": "below",
+                                 "down": "below"}.get(s, "above"))
+    return Connector(start, end, waypoints=[apex], **kw)

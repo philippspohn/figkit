@@ -16,5 +16,8 @@ with Figure(pad=24) as fig:
         .above_of(group(data, model, loss), gap=26)
 
 fig.save("out/00_quickstart.svg")
-fig.save("out/00_quickstart.png", scale=2)
+# PNG needs a rasteriser (cairosvg, rsvg-convert, resvg, …); the SVG
+# above is always written, so skip quietly when none is installed.
+if any(available_backends().values()):
+    fig.save("out/00_quickstart.png", scale=2)
 print(fig)

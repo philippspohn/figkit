@@ -28,6 +28,7 @@ entirely, and each check can be switched off in the call.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 
 from .colors import luminance, parse_color
@@ -203,8 +204,26 @@ def _carries_content(el) -> bool:
     return label is not None and bool(str(label.text).strip())
 
 
-def _endpoint_elements(conn: Connector) -> set:
-    """Elements a connector legitimately touches: its endpoints and kin."""
+def _is_content(el) -> bool:
+    """True when the element *is* the readable thing, not merely its container.
+
+    A labelled box counts as content-bearing for routing purposes, but for
+    overlap the label is audited as an item in its own right — so treating the
+    box as content too would flag anything grazing its edge, far from any
+    glyph.
+    """
+    from .image import Image
+    return isinstance(el, (Text, Image))
+
+
+def _endpoint_elements(conn: Connector, candidates=()) -> set:
+    """Elements a connector legitimately touches: its endpoints and kin.
+
+    Anchors and elements name their target directly. Raw coordinates do not,
+    so an endpoint that lands inside an element counts as connecting to it —
+    otherwise ``arrow((0, 9), (label.bbox.cx, label.bbox.cy))`` gets reported
+    as passing through the very thing it points at.
+    """
     out = set()
     for ref in (conn.start_ref, conn.end_ref, *conn.waypoints):
         el = getattr(ref, "element", None) or (ref if isinstance(ref, Element)
@@ -217,6 +236,14 @@ def _endpoint_elements(conn: Connector) -> set:
         while node is not None:               # NOT their other children
             out.add(id(node))
             node = getattr(node, "parent", None)
+    try:
+        _d, start, _sd, end, _ed = conn.geometry()
+    except Exception:
+        return out
+    for el in candidates:
+        bb = el.bbox
+        if bb.contains(start) or bb.contains(end):
+            out.add(id(el))
     return out
 
 
@@ -383,7 +410,7 @@ def _check_overlaps(items, min_overlap: float, content_only: bool,
                 container = a if _contains(abox, bbox) else b
                 inner = b if container is a else a
                 if container is upper and _obscures(container) \
-                        and _carries_content(inner):
+                        and _is_content(inner):
                     out.append(Finding(
                         "overlap",
                         f"{describe(container)} is painted over "
@@ -400,7 +427,7 @@ def _check_overlaps(items, min_overlap: float, content_only: bool,
                 #     is what a mis-placed box looks like.
                 # Shapes drawn together under one parent are exempt from (2):
                 # a fan of wedges or a wireframe overlaps itself on purpose.
-                covers_content = _carries_content(lower) and _obscures(upper)
+                covers_content = _is_content(lower) and _obscures(upper)
                 buries = (hidden > 0.25 and _obscures(upper)
                           and a.parent is not b.parent)
                 if not (covers_content or buries):
@@ -427,7 +454,7 @@ def _check_crossings(figure, items) -> list:
     targets = [e for e in targets                 # a label and its shape are
                if id(_owner(e)) not in owners or _owner(e) is e]  # one target
     for conn in connectors:
-        allowed = _endpoint_elements(conn)
+        allowed = _endpoint_elements(conn, targets)
         # A perfectly horizontal or vertical connector has a zero-area bbox,
         # which would never "intersect" anything; pad it for the prefilter.
         cbox = conn.bbox.expand(1.0)
@@ -521,15 +548,20 @@ def _check_contrast(figure, min_contrast: float) -> list:
             ratio = _contrast_ratio(colour, backdrop)
         except ValueError:
             continue
-        if ratio < min_contrast:
+        if ratio < min_contrast - 1e-9:
             out.append(Finding(
                 "contrast",
                 f"{describe(el)}: text {colour} on {backdrop} has contrast "
-                f"{ratio:.1f}:1 (want {min_contrast:.1f}:1)",
+                f"{_floor2(ratio)}:1 (want {min_contrast:.2f}:1)",
                 severity="error" if ratio < 1.6 else "warning",
                 where=lb.center, elements=(el,),
                 detail={"ratio": ratio, "color": colour, "background": backdrop}))
     return out
+
+
+def _floor2(value: float) -> str:
+    """Round *down* to 2dp, so a failing ratio never prints as the threshold."""
+    return f"{math.floor(value * 100) / 100:.2f}"
 
 
 def _contrast_ratio(fg, bg) -> float:

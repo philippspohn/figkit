@@ -33,10 +33,43 @@ def test_autosize_includes_padding():
     assert vb.x == pytest.approx(-20)
 
 
+def test_fixed_canvas_starts_at_the_origin():
+    """Pinning both dimensions makes a canvas, and (0, 0) is its corner.
+
+    Deriving the origin from the content minimum instead silently eats any
+    margin you left at the top and left.
+    """
+    with Figure(764, 620, pad=0) as fig:
+        Box("content", w=200, h=80).at(60, 40)
+    assert fig.viewbox() == (0, 0, 764, 620)
+
+
+def test_origin_can_be_moved_or_made_content_relative():
+    with Figure(400, 300, pad=0, origin=(10, 20)) as fig:
+        Box("c", w=50, h=50).at(100, 100)
+    assert fig.viewbox().anchor("nw") == (10, 20)
+
+    with Figure(400, 300, pad=0, origin="content") as fig2:
+        Box("c", w=50, h=50, stroke="none").at(100, 100)
+    assert fig2.viewbox().anchor("nw") == (100, 100)
+
+
+def test_autosized_and_half_pinned_stay_content_relative():
+    with Figure(pad=10) as fig:
+        Box("c", w=50, h=50, stroke="none").at(100, 100)
+    assert fig.viewbox().anchor("nw") == (90, 90)
+
+    with Figure(w=500, pad=10) as half:
+        Box("c", w=50, h=50, stroke="none").at(100, 100)
+    assert half.viewbox().anchor("nw") == (90, 90)
+    assert half.viewbox().w == 500
+
+
 def test_fixed_size_and_explicit_viewbox():
     with Figure(w=500, h=300) as fig:
         Box(None, 0, 0, 10, 10)
     assert fig.viewbox().w == 500
+    assert fig.fixed_size
     fig.set_viewbox(0, 0, 42, 24)
     assert fig.viewbox().w == 42
     fig.fit_contents(pad=0)

@@ -165,5 +165,8 @@ with Figure(theme=T, pad=26, background="#ffffff") as fig:
     elbow(c_pi.e, out_m.w, stub=18, corner=8)
 
 fig.save("out/01_pipeline.svg")
-fig.save("out/01_pipeline.png", scale=2)
+# PNG needs a rasteriser (cairosvg, rsvg-convert, resvg, …); the SVG
+# above is always written, so skip quietly when none is installed.
+if any(available_backends().values()):
+    fig.save("out/01_pipeline.png", scale=2)
 print(fig, "-> out/01_pipeline.svg")

@@ -140,6 +140,7 @@ def rgba(c, a: float) -> str:
 
 
 def alpha(c, a: float) -> str:
+    """Return colour ``c`` with its alpha replaced by ``a`` (0..1)."""
     p = parse_color(c)
     if p is None:
         return "none"
@@ -174,12 +175,14 @@ def _hls(c):
 
 
 def saturate(c, amount: float = 0.2) -> str:
+    """Increase saturation by ``amount`` (0..1); negative desaturates."""
     h, l, s, a = _hls(c)
     r, g, b = colorsys.hls_to_rgb(h, l, max(0.0, min(1.0, s + amount)))
     return to_hex((r * 255, g * 255, b * 255, a))
 
 
 def desaturate(c, amount: float = 0.2) -> str:
+    """Wash a colour out toward grey by ``amount`` (0..1)."""
     return saturate(c, -amount)
 
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 
 from .colors import colormap, contrast_color, to_hex
+from .component import Component
 from .core import Element, Group
 from .style import Style
 from .geom import BBox, Point, _expand_spec, to_point
@@ -18,7 +19,8 @@ _GROUP_KEYS = frozenset({"name", "z", "visible", "opacity", "transform",
                          "clip", "add", "theme", "style"})
 
 __all__ = ["Panel", "Matrix", "Vector", "Heatmap", "Brace", "Bracket",
-           "Legend", "Table", "Callout", "Spacer", "ColorBar"]
+           "Legend", "Table", "Callout", "Spacer", "ColorBar",
+           "LabelledMatrix"]
 
 
 # ==========================================================================
@@ -650,3 +652,76 @@ def _as_grid(values, rows: int = None, cols: int = None):
         per = math.ceil(len(seq) / rows)
         return [list(seq[i:i + per]) for i in range(0, len(seq), per)]
     return [list(seq)]
+
+
+class LabelledMatrix(Component):
+    """A :class:`Matrix` with its axis labels, delimiters and caption.
+
+    The pieces of a matrix in a formula — a rotated row label, a column label,
+    brackets, a caption underneath — are each trivial on their own and fiddly
+    to place together. This bundles them into one movable unit.
+
+    >>> LabelledMatrix(values, row_label="seq len", col_label="$d$",
+    ...                caption="$\\Pi_{\\mathcal{NM}}$", brackets="round")
+
+    Exposes ``.matrix``, ``.caption_text``, ``.row_text`` and ``.col_text``.
+    """
+
+    role = "group"
+
+    def build(self, values=None, *, cell=16, row_label=None, col_label=None,
+              caption=None, brackets=None, label_gap: float = 7.0,
+              caption_gap: float = 9.0, bracket_gap: float = 5.0,
+              label_size: float = 11.0, caption_size: float = 13.0,
+              label_style=None, **matrix_kw):
+        matrix = Matrix(values, cell=cell, add=False, **matrix_kw)
+        self.expose("matrix", matrix)
+        parts = [matrix]
+
+        if brackets:
+            parts.extend(self._delimiters(matrix, brackets, bracket_gap))
+        span = BBox.union_all([p.bbox for p in parts]) or matrix.bbox
+
+        if col_label is not None:
+            top = Text(col_label, add=False, font_size=label_size,
+                       style=label_style)
+            top.at(span.cx, span.y0 - label_gap, anchor="s")
+            self.expose("col_text", top)
+            parts.append(top)
+        if row_label is not None:
+            side = Text(row_label, add=False, font_size=label_size,
+                        style=label_style)
+            side.rotate(-90)
+            side.at(span.x0 - label_gap, span.cy, anchor="e")
+            self.expose("row_text", side)
+            parts.append(side)
+        if caption is not None:
+            below = Text(caption, add=False, font_size=caption_size)
+            below.at(span.cx, span.y1 + caption_gap, anchor="n")
+            self.expose("caption_text", below)
+            parts.append(below)
+        return parts
+
+    def _delimiters(self, matrix, kind, gap: float) -> list:
+        """Square or round brackets hugging the matrix."""
+        box = matrix.bbox.expand(gap)
+        arm = min(box.w * 0.16, 7.0)
+        style = str(kind).lower()
+        stroke = dict(fill="none", stroke=self.prop("color", "#16181d"),
+                      stroke_width=1.2, stroke_linecap="round",
+                      stroke_linejoin="round", add=False)
+        if style in ("round", "paren", "()"):
+            bulge = max(6.0, box.h * 0.14)
+            left = (f"M{fmt(box.x0)} {fmt(box.y0)}"
+                    f"Q{fmt(box.x0 - bulge)} {fmt(box.cy)} "
+                    f"{fmt(box.x0)} {fmt(box.y1)}")
+            right = (f"M{fmt(box.x1)} {fmt(box.y0)}"
+                     f"Q{fmt(box.x1 + bulge)} {fmt(box.cy)} "
+                     f"{fmt(box.x1)} {fmt(box.y1)}")
+        else:
+            left = (f"M{fmt(box.x0 + arm)} {fmt(box.y0)}H{fmt(box.x0)}"
+                    f"V{fmt(box.y1)}H{fmt(box.x0 + arm)}")
+            right = (f"M{fmt(box.x1 - arm)} {fmt(box.y0)}H{fmt(box.x1)}"
+                     f"V{fmt(box.y1)}H{fmt(box.x1 - arm)}")
+        from .shapes import Path
+        return [Path(left, **stroke), Path(right, **stroke)]

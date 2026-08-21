@@ -1,9 +1,10 @@
 import math
+import re
 
 import pytest
 
-from figkit import (Box, Point, arrow, connect, curve, double_arrow, elbow,
-                    line)
+from figkit import (Box, Connector, Point, arrow, connect, curve,
+                    double_arrow, elbow, line)
 from figkit.svgdoc import RenderContext
 from figkit.svgpath import abs_segments, path_bbox
 
@@ -152,3 +153,52 @@ def test_side_hint_forces_an_edge(pair):
     a, b = pair
     _d, p0, _sd, _p1, _ed = arrow(a, b, start_side="top", add=False).geometry()
     assert p0.y == pytest.approx(a.bbox.y0)
+
+
+def _head_axis_offset(conn) -> float:
+    """Perpendicular distance from the stroke's end to the head's axis.
+
+    A stroke that ends off the head's axis pokes out of its side once the
+    stroke has any width — which is what trimming by arc length while aiming
+    the head along the tangent at the tip used to do on curved paths.
+    """
+    from figkit.svgpath import flatten_path
+    paths = re.findall(r'<path d="([^"]+)"', render(conn))
+    end = Point(*flatten_path(paths[0], 12)[-1][-1])
+    head = [Point(*p) for p in flatten_path(paths[1], 1)[0]]
+    tip, back = head[0], head[1].lerp(head[2], 0.5)
+    axis = (tip - back).normalized()
+    v = end - tip
+    return abs(v.x * axis.y - v.y * axis.x)
+
+
+@pytest.mark.parametrize("kw", [
+    dict(route="straight"),
+    dict(route="curve", bow=0.3),
+    dict(route="curve", bow=0.9),
+    dict(route="curve", bow=-0.8),
+    dict(route="elbow", stub=20),
+    dict(route="curve", bow=0.7, stroke_width=6),
+    dict(route="arc", bend=0.6),
+])
+def test_stroke_ends_on_the_head_axis(kw):
+    conn = Connector((0, 0), (40, 110), head_size=16, add=False, **kw)
+    assert _head_axis_offset(conn) < 0.05
+
+
+def test_tail_head_is_aimed_too():
+    conn = Connector((0, 0), (40, 110), route="curve", bow=0.9, head="none",
+                     tail="triangle", head_size=16, add=False)
+    paths = re.findall(r'<path d="([^"]+)"', render(conn))
+    assert len(paths) == 2                       # stroke + tail head only
+
+
+def test_head_points_along_the_path_not_across_it():
+    """The head axis should follow the direction the stroke arrives from."""
+    from figkit.svgpath import flatten_path
+    conn = curve((0, 0), (40, 110), bow=0.9, head_size=16, add=False)
+    paths = re.findall(r'<path d="([^"]+)"', render(conn))
+    stroke_end = Point(*flatten_path(paths[0], 8)[-1][-1])
+    tip = conn.geometry()[3]
+    axis = (tip - stroke_end).normalized()
+    assert axis.dot(conn.direction_at(1.0)) > 0.9        # near-parallel

@@ -7,18 +7,29 @@ name = "figkit"
 version = "0.1.0"
 description = "Design figures with Python code — boxes, arrows, LaTeX and data, exported to SVG/PNG/PDF/HTML"
 readme = "README.md"
-requires-python = ">=3.9"
-license = { text = "MIT" }
+requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "figkit contributors" }]
-keywords = ["svg", "figures", "diagrams", "vector", "graphics", "latex",
-            "publication", "illustration"]
+keywords = [
+  "svg", "figures", "diagrams", "vector", "graphics", "latex",
+  "publication", "illustration", "scientific-visualization", "matplotlib",
+]
 classifiers = [
   "Development Status :: 4 - Beta",
   "Intended Audience :: Science/Research",
-  "License :: OSI Approved :: MIT License",
+  "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
   "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3 :: Only",
   "Topic :: Multimedia :: Graphics",
   "Topic :: Scientific/Engineering :: Visualization",
+  "Topic :: Text Processing :: Markup",
+  "Typing :: Typed",
 ]
 dependencies = [
   "fonttools>=4.30",
@@ -28,10 +39,15 @@ dependencies = [
 latex  = ["matplotlib>=3.5"]
 export = ["cairosvg>=2.5"]
 all    = ["matplotlib>=3.5", "cairosvg>=2.5"]
-dev    = ["matplotlib>=3.5", "cairosvg>=2.5", "pytest>=7.0"]
+dev    = ["matplotlib>=3.5", "cairosvg>=2.5", "pytest>=7.0", "pyflakes>=3.0",
+          "build>=1.0", "twine>=5.0"]
 
 [project.urls]
-Homepage = "https://github.com/philippspohn/figkit-claude"
+Homepage      = "https://github.com/philippspohn/figkit"
+Repository    = "https://github.com/philippspohn/figkit"
+Issues        = "https://github.com/philippspohn/figkit/issues"
+Changelog     = "https://github.com/philippspohn/figkit/blob/main/CHANGELOG.md"
+"Agent manual" = "https://github.com/philippspohn/figkit/blob/main/AI_MANUAL.md"
 
 [tool.setuptools]
 packages = ["figkit"]

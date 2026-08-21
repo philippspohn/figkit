@@ -6,7 +6,7 @@ import os
 import warnings
 
 from .core import Group, pop_container, push_container
-from .geom import Affine, BBox, _expand_spec
+from .geom import Affine, BBox, _expand_spec, to_point
 from .style import DEFAULT_THEME, Theme, use_theme
 from .svgdoc import Node, RenderContext
 
@@ -37,7 +37,8 @@ class Figure(Group):
     def __init__(self, w: float = None, h: float = None, *, pad=24,
                  background=None, theme: Theme = None, style=None,
                  title: str = None, description: str = None,
-                 viewbox: BBox = None, scale: float = 1.0, **props):
+                 viewbox: BBox = None, origin=None, scale: float = 1.0,
+                 **props):
         self._fixed_w = w
         self._fixed_h = h
         self.pad = _expand_spec(pad)
@@ -45,6 +46,7 @@ class Figure(Group):
         self.title = title
         self.description = description
         self._viewbox = viewbox
+        self._origin = origin
         self.scale = float(scale)
         self._theme_token = None
         self._container_token = None
@@ -79,8 +81,19 @@ class Figure(Group):
         bb = BBox.union_all(boxes)
         return bb if bb is not None else BBox(0, 0, 0, 0)
 
+    @property
+    def fixed_size(self) -> bool:
+        """True when both dimensions were pinned, i.e. this is a canvas."""
+        return self._fixed_w is not None and self._fixed_h is not None
+
     def viewbox(self) -> BBox:
-        """The rectangle of world space that ends up in the output."""
+        """The rectangle of world space that ends up in the output.
+
+        Auto-sized figures wrap their content plus ``pad``. Giving both ``w``
+        and ``h`` makes the figure a fixed canvas, whose origin is ``(0, 0)``
+        so that coordinates mean what they say — pass ``origin=`` to move it,
+        or ``origin="content"`` for the auto-sized behaviour.
+        """
         if self._viewbox is not None:
             return self._viewbox
         content = self.content_bbox()
@@ -90,6 +103,12 @@ class Figure(Group):
             bb = BBox(bb.x, bb.y, float(self._fixed_w), bb.h)
         if self._fixed_h is not None:
             bb = BBox(bb.x, bb.y, bb.w, float(self._fixed_h))
+        anchor = self._origin
+        if anchor is None and self.fixed_size:
+            anchor = (0.0, 0.0)      # a pinned canvas starts at the origin
+        if anchor is not None and anchor != "content":
+            p = to_point(anchor)
+            bb = BBox(p.x, p.y, bb.w, bb.h)
         if bb.w <= 0:
             bb = BBox(bb.x, bb.y, 1.0, bb.h)
         if bb.h <= 0:
@@ -111,6 +130,7 @@ class Figure(Group):
         """Drop any pinned viewbox or fixed size and go back to auto-sizing."""
         self._viewbox = None
         self._fixed_w = self._fixed_h = None
+        self._origin = None
         if pad is not None:
             self.pad = _expand_spec(pad)
         return self

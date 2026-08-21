@@ -256,3 +256,28 @@ def test_hidden_elements_are_not_audited():
         Box("first", w=120, h=40).at(0, 0)
         Box("second", w=120, h=40).at(60, 20).hide()
     assert not fig.audit()
+
+
+def test_contrast_message_never_reads_as_passing():
+    """A ratio just under the threshold must not print as the threshold."""
+    with Figure() as fig:
+        Box("borderline", w=140, fill="#ffffff", color="#959595")
+    finding = fig.audit().by_kind("contrast")[0]
+    assert "2.99:1 (want 3.00:1)" in finding.message
+
+
+def test_raw_point_endpoints_count_as_connections():
+    """An arrow aimed at a label by coordinates is not "passing through" it."""
+    with Figure() as fig:
+        label = Text("destination").at(100, 0)
+        arrow((0, 9), (label.bbox.cx, label.bbox.cy))
+    assert not fig.audit().by_kind("crossing")
+
+
+def test_raw_point_endpoints_still_catch_real_crossings():
+    with Figure() as fig:
+        a = Box("A", w=60)
+        Box("through", w=90).right_of(a, gap=60)
+        b = Box("B", w=60).right_of(fig.children[1], gap=60)
+        arrow((a.bbox.x1, a.bbox.cy), (b.bbox.x0, b.bbox.cy))
+    assert fig.audit().by_kind("crossing")

@@ -100,6 +100,20 @@ def to_html(fig, path=None, **kw):
     return os.path.abspath(path)
 
 
+def _warn_if_text_not_outlined(fig, svg: str, svg_kw: dict) -> None:
+    """Raster/PDF export outlines text so the output cannot depend on the
+    renderer's fonts. If no outline font could be found we fall back to real
+    ``<text>``, which quietly reintroduces that dependency — so say so."""
+    if not svg_kw.get("text_as_paths") or "<text" not in svg:
+        return
+    warnings.warn(
+        "figkit: no outline font was available, so text was exported as "
+        "<text> rather than paths. The rendered output will use whatever font "
+        "the converter picks, which may not match the measured layout. "
+        "Install the font you asked for, or register one with "
+        "figkit.register_font().", stacklevel=3)
+
+
 def _split_kw(kw: dict) -> tuple:
     """Separate SVG-rendering options from converter options."""
     svg_keys = ("pretty", "text_as_paths", "embed_fonts", "standalone")
@@ -115,6 +129,7 @@ def to_png(fig, path=None, *, scale: float = 2.0, dpi: float = None,
     # Outlining text removes any dependency on the converter's font stack.
     svg_kw.setdefault("text_as_paths", True)
     svg = fig.to_svg(**svg_kw)
+    _warn_if_text_not_outlined(fig, svg, svg_kw)
     vb = fig.viewbox()
     scale = float(scale if scale is not None else 2.0)
     if dpi:
@@ -134,6 +149,7 @@ def to_pdf(fig, path=None, *, background=None, fmt: str = "pdf", **kw):
     svg_kw, _ = _split_kw(kw)
     svg_kw.setdefault("text_as_paths", True)
     svg = fig.to_svg(**svg_kw)
+    _warn_if_text_not_outlined(fig, svg, svg_kw)
     data = _vectorize(svg, fmt, background)
     if path is None:
         return data
@@ -147,10 +163,23 @@ def to_pdf(fig, path=None, *, background=None, fmt: str = "pdf", **kw):
 # --------------------------------------------------------------------------
 
 def _cairosvg(svg: str, fmt: str, width=None, height=None, background=None):
+    """Convert via cairosvg, or return None so the next backend gets a turn.
+
+    Every step is guarded, not just the import: cairosvg raises OSError when
+    its native Cairo library is missing, and it can raise that on import *or*
+    on first attribute access. A backend in the fallback chain must never be
+    able to end the chain.
+    """
     try:
         import cairosvg
-    except ImportError:
+
+        fn = {"png": cairosvg.svg2png, "pdf": cairosvg.svg2pdf,
+              "ps": cairosvg.svg2ps, "eps": cairosvg.svg2ps}.get(fmt)
+    except Exception:
         return None
+    if fn is None:
+        return None
+
     if "<filter" in svg:
         # cairosvg ignores filter primitives outright, so a shadow that shows
         # up in the SVG would silently vanish here. Say so rather than ship
@@ -160,10 +189,7 @@ def _cairosvg(svg: str, fmt: str, width=None, height=None, background=None):
             "the cairosvg backend ignores — the rasterised output will differ "
             "from the SVG. Drop the filter, or render with rsvg-convert / "
             "resvg / chromium.", stacklevel=3)
-    fn = {"png": cairosvg.svg2png, "pdf": cairosvg.svg2pdf,
-          "ps": cairosvg.svg2ps, "eps": cairosvg.svg2ps}.get(fmt)
-    if fn is None:
-        return None
+
     kwargs = {"bytestring": svg.encode("utf-8")}
     if width:
         kwargs["output_width"] = width
@@ -171,7 +197,12 @@ def _cairosvg(svg: str, fmt: str, width=None, height=None, background=None):
         kwargs["output_height"] = height
     if background:
         kwargs["background_color"] = background
-    return fn(**kwargs)
+    try:
+        return fn(**kwargs)
+    except Exception as exc:
+        warnings.warn(f"figkit: the cairosvg backend failed ({exc}); "
+                      f"trying the next one", stacklevel=3)
+        return None
 
 
 def _run_cli(cmd: list, svg: str, out_suffix: str) -> bytes | None:

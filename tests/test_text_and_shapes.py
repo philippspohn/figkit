@@ -4,6 +4,7 @@ from figkit import (Box, Circle, Diamond, Ellipse, Group, Image, Line, Matrix,
                     Path, Pill, Polygon, Polyline, Style, Text, Vector,
                     measure_text)
 from figkit.fonts import get_font
+from figkit.mathtext import math_available
 from figkit.svgdoc import RenderContext
 from figkit.text import layout_text
 
@@ -41,6 +42,7 @@ def test_layout_wrapping():
     assert all(ln.width <= 62 for ln in lay.lines)
 
 
+@pytest.mark.skipif(not math_available(), reason="needs matplotlib")
 def test_inline_math_produces_paths():
     t = Text("value $x^2$ here", add=False)
     out = render(t)
@@ -206,3 +208,116 @@ def test_png_bytes_are_embedded():
     im = Image(png, mime="image/png", add=False)
     assert im.natural_size == (16.0, 8.0)
     assert "data:image/png;base64," in render(im)
+
+
+# -- rich text spans -------------------------------------------------------
+
+def test_span_overrides_only_what_it_sets():
+    from figkit import Span
+    span = Span("x", color="red", bold=True)
+    assert span.overrides() == {"color": "red", "weight": "bold"}
+    assert Span("x").overrides() == {}
+    assert Span("x", bold=False).overrides() == {"weight": "normal"}
+    assert Span("x", strike=True).overrides()["decoration"] == ("strike",)
+
+
+def test_spans_produce_separately_styled_runs():
+    from figkit import Span
+    from figkit.text import layout_text
+    lay = layout_text(["plain ", Span("red", color="#ff0000", bold=True),
+                       " tail"], font_size=14)
+    runs = lay.lines[0].runs
+    assert [r.content for r in runs] == ["plain ", "red", " tail"]
+    assert runs[1].color == "#ff0000" and runs[1].weight == "bold"
+    assert runs[0].color is None and runs[2].weight == "normal"
+
+
+def test_span_colour_reaches_the_svg():
+    from figkit import Span
+    out = render(Text(["a ", Span("b", color="#123456")], add=False))
+    assert '#123456' in out
+
+
+def test_span_size_changes_measured_width():
+    from figkit import Span
+    small = Text(["word"], font_size=10, add=False).bbox.w
+    big = Text([Span("word", size=30)], font_size=10, add=False).bbox.w
+    assert big > small * 2.5
+
+
+def test_decorations_are_drawn_as_geometry_not_attributes():
+    """text-decoration is dropped by rasterisers and by outlining, so the
+    rules must be real geometry."""
+    from figkit import Span
+    plain = render(Text([Span("struck", strike=True)], add=False))
+    assert "<rect" in plain
+    outlined = Text([Span("struck", strike=True)], add=False).render(
+        RenderContext(text_as_paths=True)).render()
+    assert "<rect" in outlined and "<text" not in outlined
+
+
+def test_underline_and_strike_sit_on_opposite_sides_of_the_baseline():
+    from figkit import Span
+    import re
+    strike = Text([Span("x", strike=True)], add=False)
+    under = Text([Span("x", underline=True)], add=False)
+    ys = [float(re.search(r'<rect[^>]*y="([\d.-]+)"', render(t)).group(1))
+          for t in (strike, under)]
+    assert ys[0] < ys[1]
+
+
+def test_spans_survive_wrapping():
+    from figkit import Span
+    from figkit.text import layout_text
+    lay = layout_text(["one two ", Span("three four", color="blue"), " five"],
+                      max_width=70, font_size=13)
+    coloured = [r for line in lay.lines for r in line.runs if r.color == "blue"]
+    assert len(coloured) >= 2                 # split across lines, still blue
+    assert all(line.width <= 72 for line in lay.lines)
+
+
+def test_spans_work_inside_a_box_label():
+    from figkit import Span
+    box = Box(["status: ", Span("FAILED", color="#ffffff", bold=True)],
+              w=200, add=False)
+    assert box.text == "status: FAILED"       # plain text for measurement/audit
+    assert "#ffffff" in render(box)
+
+
+def test_runs_only_merge_when_styling_matches():
+    from figkit import Span
+    from figkit.text import _merge_runs, layout_text
+    lay = layout_text(["a ", Span("b", color="red"), " c"], font_size=12)
+    assert len(_merge_runs(lay.lines[0].runs)) == 3
+    lay2 = layout_text("a b c", font_size=12)
+    assert len(_merge_runs(lay2.lines[0].runs)) == 1
+
+
+def test_math_degrades_to_plain_text_without_matplotlib(monkeypatch):
+    """A missing optional dependency should not blow up a whole figure."""
+    import figkit.text as text_module
+    from figkit.mathtext import MathError
+
+    def unavailable(*a, **k):
+        raise MathError("math rendering needs matplotlib")
+
+    monkeypatch.setattr(text_module, "render_math", unavailable)
+    monkeypatch.setattr(text_module, "math_available", lambda: False)
+    box = Box("value $x^2$ here", add=False)
+    with pytest.warns(UserWarning, match="needs matplotlib"):
+        out = render(box)                    # measurement is lazy
+    assert "x^2" in out                      # set as source, still readable
+    assert box.bbox.w > 0
+
+
+def test_a_genuine_tex_error_still_raises(monkeypatch):
+    import figkit.text as text_module
+    from figkit.mathtext import MathError
+
+    def broken(*a, **k):
+        raise MathError("could not typeset")
+
+    monkeypatch.setattr(text_module, "render_math", broken)
+    monkeypatch.setattr(text_module, "math_available", lambda: True)
+    with pytest.raises(MathError):
+        Box("$\\frac{$", add=False).bbox

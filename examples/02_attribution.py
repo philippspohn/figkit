@@ -212,5 +212,8 @@ with Figure(theme=T, pad=28, background=PAPER_BG) as fig:
                   stroke=PLUM, stroke_width=1.8, opacity=0.85, head="none")
 
 fig.save("out/02_attribution.svg")
-fig.save("out/02_attribution.png", scale=2)
+# PNG needs a rasteriser (cairosvg, rsvg-convert, resvg, …); the SVG
+# above is always written, so skip quietly when none is installed.
+if any(available_backends().values()):
+    fig.save("out/02_attribution.png", scale=2)
 print(fig, "-> out/02_attribution.svg")

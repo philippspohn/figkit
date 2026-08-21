@@ -1,0 +1,6 @@
+include LICENSE README.md AI_MANUAL.md CHANGELOG.md CONTRIBUTING.md
+include figkit/py.typed
+recursive-include examples *.py
+recursive-include tests *.py
+prune docs
+prune out
