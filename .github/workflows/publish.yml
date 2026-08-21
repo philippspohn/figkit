@@ -57,6 +57,19 @@ jobs:
             exit 1
           fi
 
+      - name: Check the workflow token can write
+        if: inputs.version != ''
+        # A dry-run push still asks the server for git-receive-pack, which is
+        # refused outright when Settings -> Actions -> General -> Workflow
+        # permissions is read-only. Better to learn that in ten seconds than
+        # after a green build.
+        run: |
+          if ! git push --dry-run origin "HEAD:${{ github.ref_name }}"; then
+            echo "::error::the workflow token cannot push. Set Settings ->" \
+                 "Actions -> General -> Workflow permissions to read and write."
+            exit 1
+          fi
+
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
