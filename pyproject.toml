@@ -10,7 +10,6 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
 license-files = ["LICENSE"]
-authors = [{ name = "figkit contributors" }]
 keywords = [
   "svg", "figures", "diagrams", "vector", "graphics", "latex",
   "publication", "illustration", "scientific-visualization", "matplotlib",

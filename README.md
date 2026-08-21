@@ -1,4 +1,15 @@
-# figkit
+<p align="center">
+  <img src="docs/logo.png" alt="figkit" width="180">
+</p>
+
+<h1 align="center">figkit</h1>
+
+<p align="center">
+  <a href="https://pypi.org/project/figkit/"><img alt="PyPI" src="https://img.shields.io/pypi/v/figkit.svg"></a>
+  <a href="https://pypi.org/project/figkit/"><img alt="Python versions" src="https://img.shields.io/pypi/pyversions/figkit.svg"></a>
+  <a href="https://github.com/philippspohn/figkit/actions/workflows/ci.yml"><img alt="tests" src="https://github.com/philippspohn/figkit/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="LICENSE"><img alt="MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
+</p>
 
 **Design figures with Python code.** Boxes, arrows, LaTeX, images and data —
 laid out precisely, styled by a cascading theme, exported to SVG, PNG, PDF or
