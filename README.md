@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/logo.png" alt="figkit" width="180">
+  <img src="https://raw.githubusercontent.com/philippspohn/figkit/main/docs/logo.png" alt="figkit" width="180">
 </p>
 
 <h1 align="center">figkit</h1>
@@ -18,7 +18,7 @@ HTML.
 figkit is for the kind of figure you'd otherwise assemble by hand in Figma or
 draw.io: ML paper pipelines, architecture diagrams, research blog explainers.
 Except it's code, so it's diffable, reproducible, parameterisable — and an LLM
-can write it for you (see [`AI_MANUAL.md`](AI_MANUAL.md)).
+can write it for you (see [`AI_MANUAL.md`](https://github.com/philippspohn/figkit/blob/main/AI_MANUAL.md)).
 
 ```python
 from figkit import *
@@ -32,7 +32,7 @@ fig.save("figure.svg")
 fig.save("figure.png", scale=2)
 ```
 
-![quickstart](docs/images/00_quickstart.png)
+![quickstart](https://raw.githubusercontent.com/philippspohn/figkit/main/docs/images/00_quickstart.png)
 
 **Check your work without looking at it.** `fig.audit()` reports the mistakes
 that are obvious in a picture and invisible in the code — and stays quiet about
@@ -132,41 +132,41 @@ arrow(note.se, fr.pt(50, 0.94))       # point at a data coordinate
 ## Gallery
 
 Each figure below is produced by the script of the same name in
-[`examples/`](examples/).
+[`examples/`](https://github.com/philippspohn/figkit/tree/main/examples).
 
 ### `01_pipeline.py` — an ML paper pipeline
 
 Themes, relative placement, live anchors, inline LaTeX, colour matrices,
 elbow routing and hand-built vector graphics.
 
-![pipeline](docs/images/01_pipeline.png)
+![pipeline](https://raw.githubusercontent.com/philippspohn/figkit/main/docs/images/01_pipeline.png)
 
 ### `02_attribution.py` — a two-panel blog explainer
 
 Programmatic node grids and hundreds of curved edges whose width and opacity
 come straight from the data.
 
-![attribution](docs/images/02_attribution.png)
+![attribution](https://raw.githubusercontent.com/philippspohn/figkit/main/docs/images/02_attribution.png)
 
 ### `03_data_and_plots.py` — data-driven graphics
 
 A coordinate frame, a legend, a table, a brace and a heatmap with a colour bar.
 
-![plots](docs/images/03_data_and_plots.png)
+![plots](https://raw.githubusercontent.com/philippspohn/figkit/main/docs/images/03_data_and_plots.png)
 
 ### `05_rich_text_and_components.py` — spans, components and formulas
 
 Per-word colour and strike-through, a `Component` publishing named ports, and
 `LabelledMatrix` set as an equation with `hstack(align="baseline")`.
 
-![rich text](docs/images/05_rich_text_and_components.png)
+![rich text](https://raw.githubusercontent.com/philippspohn/figkit/main/docs/images/05_rich_text_and_components.png)
 
 ### `04_themes.py` — one diagram, seven themes
 
 Not a single colour is set on an element — the theme cascade decides
 everything.
 
-![themes](docs/images/04_themes.png)
+![themes](https://raw.githubusercontent.com/philippspohn/figkit/main/docs/images/04_themes.png)
 
 ---
 
@@ -218,7 +218,7 @@ python -m pyflakes figkit
 python examples/01_pipeline.py
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for what the test suite expects — in
+See [CONTRIBUTING.md](https://github.com/philippspohn/figkit/blob/main/CONTRIBUTING.md) for what the test suite expects — in
 particular, that new audit checks come with tests for the cases they must
 *not* report.
 
