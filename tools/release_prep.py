@@ -1,5 +1,8 @@
 """Prepare a release: set the version, date the changelog, extract the notes.
 
+The version lives in ``figkit/__init__.py`` and ``pyproject.toml`` reads it
+from there, so there is only ever one number to change.
+
 Run by the ``publish`` workflow before it builds, and usable by hand:
 
     python tools/release_prep.py 0.1.1 --notes-out RELEASE_NOTES.md
@@ -24,13 +27,14 @@ HEADING_RE = re.compile(r"^## \[?(?P<version>[^\]\s]+)\]?(?:\s*[—-]\s*(?P<date
 
 
 def set_version(root: pathlib.Path, version: str) -> str:
-    pyproject = root / "pyproject.toml"
-    text = pyproject.read_text()
-    new, n = re.subn(r'^version = ".*?"$', f'version = "{version}"', text,
-                     count=1, flags=re.M)
+    """Set ``figkit.__version__``, which is where pyproject reads it from."""
+    init = root / "figkit" / "__init__.py"
+    text = init.read_text()
+    new, n = re.subn(r'^__version__ = ".*?"$', f'__version__ = "{version}"',
+                     text, count=1, flags=re.M)
     if n != 1:
-        sys.exit("release_prep: no version field found in pyproject.toml")
-    pyproject.write_text(new)
+        sys.exit("release_prep: no __version__ found in figkit/__init__.py")
+    init.write_text(new)
     return version
 
 

@@ -4,6 +4,15 @@ All notable changes to figkit are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and figkit uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- `figkit.__version__` reported `0.1.0` from the 0.1.1 release. The number
+  lived in both `pyproject.toml` and `figkit/__init__.py`, and a release only
+  bumped the first. `pyproject.toml` now reads the version from the package,
+  so there is one number to change and it cannot drift again.
+
 ## [0.1.1] — 2026-08-21
 
 ### Connectors

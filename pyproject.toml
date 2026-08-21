@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "figkit"
-version = "0.1.1"
+dynamic = ["version"]
 description = "Design figures with Python code — boxes, arrows, LaTeX and data, exported to SVG/PNG/PDF/HTML"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -50,6 +50,11 @@ Changelog     = "https://github.com/philippspohn/figkit/blob/main/CHANGELOG.md"
 
 [tool.setuptools]
 packages = ["figkit"]
+
+# One source of truth for the version: figkit/__init__.py. setuptools reads
+# the literal without importing the package.
+[tool.setuptools.dynamic]
+version = {attr = "figkit.__version__"}
 
 [tool.setuptools.package-data]
 figkit = ["py.typed"]

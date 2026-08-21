@@ -16,7 +16,7 @@ Everything is explicit: you place things, figkit measures them accurately
 
 from __future__ import annotations
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 # -- geometry ---------------------------------------------------------------
 from .geom import Affine, BBox, Point, to_point
