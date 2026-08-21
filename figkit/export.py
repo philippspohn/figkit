@@ -30,8 +30,8 @@ def available_backends() -> dict:
     out = {"cairosvg": False, "rsvg-convert": False, "resvg": False,
            "inkscape": False, "chromium": False}
     try:
-        import cairosvg  # noqa: F401  (import is the availability check)
-        out["cairosvg"] = True
+        import cairosvg  # importing it is the availability check
+        out["cairosvg"] = cairosvg is not None
     except Exception:
         pass
     for name in ("rsvg-convert", "resvg", "inkscape"):

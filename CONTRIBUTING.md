@@ -37,7 +37,7 @@ skip rather than fail.
   does, it usually wants renaming instead.
 - Public functions get a docstring with a one-line summary and, where it
   helps, a short example.
-- Run `python -m pyflakes figkit` before opening a pull request.
+- Run `python -m pyflakes figkit tools` before opening a pull request.
 
 ## Things worth knowing before changing the internals
 
@@ -47,3 +47,29 @@ skip rather than fail.
   own labels use `Element.place_local` for parent-space arithmetic instead.
 - `Group` takes ownership of its children. `bbox_of([...])` is the read-only
   way to ask about a set of elements.
+
+## Releasing
+
+Releases are cut by the `publish` workflow, which uploads to PyPI through
+Trusted Publishing — there is no API token to hold or rotate.
+
+1. Write the entry for the new version at the top of `CHANGELOG.md`, under a
+   `## [Unreleased]` heading (or the version's own heading). The workflow
+   refuses to release if the top section is some older version, because that
+   means nobody wrote down what changed.
+2. Run the workflow on `main` from the Actions tab (**publish → Run
+   workflow**), set **version** to the number being released, and untick
+   **dry_run**.
+
+That is the whole procedure. The workflow sets the version in
+`pyproject.toml`, dates the changelog section, runs the tests and the linter,
+builds, and only then commits, tags `vX.Y.Z`, creates the GitHub Release with
+the changelog section as its notes, and uploads to PyPI. Anything that fails
+before the commit step leaves the repository untouched.
+
+Leaving **dry_run** ticked builds and checks the current commit and changes
+nothing — useful for confirming the packaging still passes.
+
+Publishing a GitHub Release by hand also works, as long as the tag matches the
+version already in `pyproject.toml`; the workflow verifies that and refuses
+otherwise.

@@ -1,8 +1,8 @@
 name: publish
 
-# Publishes to PyPI when a GitHub Release is published, using Trusted
-# Publishing (OIDC) — no API token is stored anywhere. Configure the publisher
-# at https://pypi.org/manage/account/publishing/ with:
+# Publishes to PyPI through Trusted Publishing (OIDC) — no API token is stored
+# anywhere. The publisher is configured at
+# https://pypi.org/manage/account/publishing/ with:
 #
 #   PyPI project name : figkit
 #   Owner             : philippspohn
@@ -10,24 +10,53 @@ name: publish
 #   Workflow name     : publish.yml
 #   Environment name  : pypi
 #
-# Run the workflow manually with `dry_run` to build and check the artefacts
-# without uploading anything.
+# Two ways to cut a release:
+#
+#   * Run this workflow from the Actions tab (or the API) on `main` with
+#     `version` set and `dry_run` unchecked. It sets the version, dates the
+#     changelog, runs the tests, builds, then commits, tags, creates the
+#     GitHub Release and uploads to PyPI. Nothing to do by hand.
+#   * Publish a GitHub Release yourself for a tag that matches the version
+#     already in pyproject.toml. This workflow then builds and uploads it.
+#
+# Leaving `dry_run` on (the default) builds and checks without changing,
+# tagging or uploading anything.
 
 on:
   release:
     types: [published]
   workflow_dispatch:
     inputs:
+      version:
+        description: "Version to release, e.g. 0.1.1 (empty: just build the current commit)"
+        type: string
+        default: ""
       dry_run:
-        description: "Build and check only; do not upload"
+        description: "Build and check only; do not commit, tag, release or upload"
         type: boolean
         default: true
+
+permissions:
+  contents: read
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write        # to push the version bump, the tag and the Release
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Check the run is on a branch
+        if: inputs.version != ''
+        run: |
+          if [ "${{ github.ref_type }}" != "branch" ]; then
+            echo "::error::run this on a branch (main) so the version bump can be pushed"
+            exit 1
+          fi
+
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
@@ -37,10 +66,19 @@ jobs:
           python -m pip install --upgrade pip build twine
           pip install -e ".[dev]"
 
+      - name: Set the version and date the changelog
+        if: inputs.version != ''
+        run: |
+          python tools/release_prep.py "${{ inputs.version }}" \
+            --notes-out "${{ runner.temp }}/release-notes.md"
+
       - name: Test
         # A release can be cut from any commit, including one whose CI failed,
         # so re-run the suite here rather than trusting that it was green.
         run: pytest -q
+
+      - name: Lint
+        run: python -m pyflakes figkit tools
 
       - name: Verify the tag matches the packaged version
         if: github.event_name == 'release'
@@ -59,6 +97,27 @@ jobs:
 
       - name: Check metadata
         run: twine check dist/*
+
+      - name: Commit, tag and create the GitHub Release
+        if: inputs.version != '' && inputs.dry_run == false
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          version="${VERSION#v}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pyproject.toml CHANGELOG.md
+          git commit -m "Release v${version}"
+          git tag -a "v${version}" -m "v${version}"
+          git push origin "HEAD:${{ github.ref_name }}"
+          git push origin "v${version}"
+          gh release create "v${version}" \
+            --title "v${version}" \
+            --notes-file "${{ runner.temp }}/release-notes.md" \
+            --target "$(git rev-parse HEAD)" \
+            dist/*
 
       - uses: actions/upload-artifact@v6
         with:

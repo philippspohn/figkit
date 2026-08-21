@@ -81,8 +81,8 @@ def set_latex_preamble(preamble: str) -> None:
 def math_available() -> bool:
     """True when the built-in ``mathtext`` backend can be used."""
     try:
-        import matplotlib  # noqa: F401  (import is the availability check)
-        return True
+        import matplotlib  # importing it is the availability check
+        return matplotlib is not None
     except ImportError:
         return False
 
