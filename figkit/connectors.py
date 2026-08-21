@@ -18,7 +18,7 @@ from .text import Text
 
 __all__ = [
     "Connector", "arrow", "line", "elbow", "curve", "connect", "double_arrow",
-    "HEADS",
+    "PathAnchor", "HEADS",
 ]
 
 HEADS = ("triangle", "stealth", "open", "vee", "circle", "dot", "diamond",
@@ -26,6 +26,37 @@ HEADS = ("triangle", "stealth", "open", "vee", "circle", "dot", "diamond",
 
 _SIDE_NORMAL = {"n": Point(0, -1), "s": Point(0, 1),
                 "e": Point(1, 0), "w": Point(-1, 0)}
+
+
+class PathAnchor(Anchor):
+    """A live anchor at a fraction ``t`` along a connector's path.
+
+    Unlike a bare point it re-resolves on read, so anything attached to the
+    middle of an arrow follows the arrow when its endpoints move.
+    """
+
+    __slots__ = ("t",)
+
+    def __init__(self, connector, t: float = 0.5, dx: float = 0.0,
+                 dy: float = 0.0):
+        super().__init__(connector, name=None, dx=dx, dy=dy)
+        self.t = float(t)
+
+    @property
+    def point(self) -> Point:
+        p = self.element.point_at(self.t)
+        return Point(p.x + self.dx, p.y + self.dy)
+
+    @property
+    def normal(self) -> Point:
+        d = self.element.direction_at(self.t)
+        return Point(-d.y, d.x)
+
+    def offset(self, dx: float = 0.0, dy: float = 0.0) -> "PathAnchor":
+        return PathAnchor(self.element, self.t, self.dx + dx, self.dy + dy)
+
+    def __repr__(self) -> str:
+        return f"<PathAnchor t={self.t:g} -> {self.point}>"
 
 
 # ==========================================================================
@@ -103,6 +134,7 @@ class Connector(Element):
     """
 
     role = "arrow"
+    STROKE_WIDTH_ALIAS = True
 
     def __init__(self, start, end, *, route: str = "straight", waypoints=None,
                  stub: float = 14.0, bend: float = 0.0, bow: float = 0.0,
@@ -224,9 +256,14 @@ class Connector(Element):
     def direction_at(self, t: float) -> Point:
         return point_at(self.path_data(), t)[1]
 
+    def anchor_at(self, t: float) -> PathAnchor:
+        """A *live* anchor at fraction ``t`` along the path."""
+        return PathAnchor(self, t)
+
     @property
-    def mid(self) -> Point:
-        return self.point_at(0.5)
+    def mid(self) -> PathAnchor:
+        """A live anchor at the midpoint of the path."""
+        return PathAnchor(self, 0.5)
 
     @property
     def length(self) -> float:
@@ -267,6 +304,7 @@ class Connector(Element):
         return self.invalidate()
 
     def _place_label(self) -> None:
+        self._label.reset_transform()      # placement re-runs on every measure
         p, d = point_at(self.path_data(), self.label_pos)
         n = Point(-d.y, d.x)
         side = str(self.label_side).lower()
@@ -280,11 +318,18 @@ class Connector(Element):
             n = Point(0, 0)
         target = p + n * self.label_offset
         anchor = "center"
-        if abs(n.x) > abs(n.y) and n.length:
+        if self.label_rotate:
+            anchor = "center"      # a rotated label reads best centred
+        elif abs(n.x) > abs(n.y) and n.length:
             anchor = "w" if n.x > 0 else "e"
         elif n.length:
             anchor = "n" if n.y > 0 else "s"
         self._label.at(target.x, target.y, anchor=anchor)
+        if self.label_rotate:
+            angle = math.degrees(math.atan2(d.y, d.x))
+            if angle > 90 or angle < -90:      # keep the text right way up
+                angle += 180
+            self._label.rotate(angle)
 
     # -- rendering -------------------------------------------------------
     def _render_content(self, ctx: RenderContext):

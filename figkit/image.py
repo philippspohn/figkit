@@ -239,6 +239,14 @@ class Image(Element):
         g = Node("g", raw=body)
         if not m.is_identity:
             g.attrs["transform"] = m.to_svg()
+        if self.fit == "cover" and (vw * sx > bb.w + 1e-6
+                                    or vh * sy > bb.h + 1e-6):
+            # "cover" scales past the box on one axis; clip like <image> does
+            clip = Node("clipPath").add(
+                Node("rect", x=bb.x, y=bb.y, width=bb.w, height=bb.h))
+            wrapper = Node("g", clip_path=f"url(#{ctx.add_def(clip)})")
+            wrapper.add(g)
+            return wrapper
         return g
 
 

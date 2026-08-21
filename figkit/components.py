@@ -331,6 +331,7 @@ class Brace(Element):
     """
 
     role = "brace"
+    STROKE_WIDTH_ALIAS = True
 
     def __init__(self, start, end, *, depth: float = 12.0, side: str = "auto",
                  label=None, label_gap: float = 6.0, label_style=None,

@@ -175,3 +175,41 @@ def test_auto_add_only_inside_a_figure():
     with Figure() as fig:
         inside = Box("y")
     assert inside.parent is fig
+
+
+def test_ambient_state_is_per_context():
+    """Two concurrent tasks must not steal each other's elements."""
+    import asyncio
+
+    from figkit import Style, use_theme
+    from figkit.style import current_theme
+
+    async def build(fill, hold):
+        theme = Figure().theme.derive(box=Style(fill=fill))
+        with Figure(theme=theme) as fig:
+            with use_theme(theme):
+                await asyncio.sleep(hold)
+                box = Box("x")
+                await asyncio.sleep(hold)
+        return fig, box, current_theme()
+
+    async def main():
+        return await asyncio.gather(build("#111111", 0.01),
+                                    build("#222222", 0.005))
+
+    (fig_a, box_a, _), (fig_b, box_b, _) = asyncio.run(main())
+    assert fig_a.children == [box_a]          # no cross-contamination
+    assert fig_b.children == [box_b]
+    assert box_a.prop("fill") == "#111111"
+    assert box_b.prop("fill") == "#222222"
+
+
+def test_theme_context_restores_on_exit():
+    from figkit import DEFAULT_THEME, use_theme
+    from figkit.style import current_theme
+
+    assert current_theme() is DEFAULT_THEME
+    other = DEFAULT_THEME.derive(radius=99)
+    with use_theme(other):
+        assert current_theme() is other
+    assert current_theme() is DEFAULT_THEME

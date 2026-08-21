@@ -8,6 +8,7 @@ and otherwise fall back to whichever converter is on ``PATH``
 from __future__ import annotations
 
 import os
+import warnings
 import shutil
 import subprocess
 import tempfile
@@ -150,6 +151,15 @@ def _cairosvg(svg: str, fmt: str, width=None, height=None, background=None):
         import cairosvg
     except ImportError:
         return None
+    if "<filter" in svg:
+        # cairosvg ignores filter primitives outright, so a shadow that shows
+        # up in the SVG would silently vanish here. Say so rather than ship
+        # two files that disagree.
+        warnings.warn(
+            "figkit: this figure uses an SVG filter (e.g. shadow=...), which "
+            "the cairosvg backend ignores — the rasterised output will differ "
+            "from the SVG. Drop the filter, or render with rsvg-convert / "
+            "resvg / chromium.", stacklevel=3)
     fn = {"png": cairosvg.svg2png, "pdf": cairosvg.svg2pdf,
           "ps": cairosvg.svg2ps, "eps": cairosvg.svg2ps}.get(fmt)
     if fn is None:

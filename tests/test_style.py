@@ -79,5 +79,45 @@ def test_ambient_theme_context():
 def test_named_style_lookup():
     b = Box("x", style="blue", add=False)
     assert b.prop("fill") == DEFAULT_THEME.styles["blue"]["fill"]
-    with pytest.raises(KeyError):
-        Box("x", style="does-not-exist", add=False)
+
+
+def test_classes_are_resolved_lazily_against_the_live_theme():
+    # the class does not exist when the element is built, only later
+    b = Box("x", classes="brandy", add=False)
+    assert b.prop("fill") != "#ff00ff"
+    b.theme = DEFAULT_THEME.derive(styles={"brandy": Style(fill="#ff00ff")})
+    assert b.prop("fill") == "#ff00ff"
+
+
+def test_multiple_classes_later_wins():
+    b = Box("x", style="block blue", add=False)
+    assert b.classes == ("block", "blue")
+    assert b.prop("fill") == DEFAULT_THEME.styles["blue"]["fill"]
+    b.add_class("green")
+    assert b.prop("fill") == DEFAULT_THEME.styles["green"]["fill"]
+    b.remove_class("green")
+    assert b.prop("fill") == DEFAULT_THEME.styles["blue"]["fill"]
+
+
+def test_kwargs_beat_classes():
+    assert Box("x", style="blue", fill="#010203", add=False).prop("fill") == "#010203"
+
+
+def test_dotted_class_keys_are_accepted():
+    t = DEFAULT_THEME.derive(styles={".accent": Style(fill="#abcabc")})
+    assert Box("x", classes=".accent", theme=t, add=False).prop("fill") == "#abcabc"
+
+
+def test_unknown_class_warns_at_render():
+    from figkit import Figure
+    with Figure() as fig:
+        Box("x", classes="nope")
+    with pytest.warns(UserWarning, match="unknown style class"):
+        fig.to_svg()
+
+
+def test_class_names_reach_the_svg():
+    from figkit import Figure
+    with Figure() as fig:
+        Box("x", classes="blue emphasis")
+    assert 'class="blue emphasis"' in fig.to_svg(pretty=False)

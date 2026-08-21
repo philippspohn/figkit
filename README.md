@@ -68,7 +68,7 @@ mid = between(fm, fn)                        # vertically between two boxes
 frame = fit(solver, cmn, pad=20, label="Fused operation", dash=True)
 ```
 
-**Cascading themes.** Base tokens, per-role overrides, named styles and a
+**Cascading themes.** Base tokens, per-role overrides, CSS-style classes and a
 colour palette — set once, applied everywhere.
 
 ```python
@@ -79,8 +79,11 @@ T = PAPER.derive(
     styles={"solver": Style(fill="@brand", stroke="#1b1b1b")},
 )
 with Figure(theme=T) as fig:
-    Box("FMap Solver", style="solver")
+    Box("FMap Solver", classes="solver")     # or style="solver block"
 ```
+
+Classes resolve lazily against whichever theme is in scope, so the same class
+can mean different things inside a differently themed group.
 
 **LaTeX anywhere.** Any `$...$` span in any string is typeset and emitted as
 vector outlines, so exported files don't depend on installed fonts.
@@ -148,11 +151,12 @@ everything.
 | **Placement** | `at` `move` `center_at` `right_of` `left_of` `above_of` `below_of` `inside` `align_to` `span_x` `resize` `rotate` |
 | **Layout** | `align` `distribute_h/v` `spread_h/v` `hstack` `vstack` `grid` `fit` `between` `center_on` `circular` `same_size` `bbox_of` |
 | **Data** | `Frame` (`pt` `line` `scatter` `bars` `area_fill` `region` `axes` `gridlines`), `nice_ticks` |
-| **Style** | `Style` `Theme` `use_theme`, themes `PAPER` `SLIDE` `DARK` `BLUEPRINT` `MINIMAL` `SOFT` |
+| **Style** | `Style` `Theme` `use_theme`, classes (`classes=`, `add_class`), themes `PAPER` `SLIDE` `DARK` `BLUEPRINT` `MINIMAL` `SOFT` |
 | **Colour** | `mix` `lighten` `darken` `alpha` `colormap` `palette` `contrast_color` `to_hex` |
 
 Anchors on every element: `n s e w ne nw se sw center`, plus `at_angle(deg)`,
-`uv(u, v)` and offsets like `box.e + (6, 0)`.
+`uv(u, v)` and offsets like `box.e + (6, 0)`. Connectors add `c.mid` and
+`c.anchor_at(t)`, which stay live as the arrow moves.
 
 ---
 
@@ -176,7 +180,7 @@ Anchors on every element: `n s e w ne nw se sw center`, plus `at_angle(deg)`,
 
 ```bash
 pip install -e ".[dev]"
-pytest                       # 169 tests, including a smoke test per example
+pytest                       # 177 tests, including a smoke test per example
 python examples/01_pipeline.py
 ```
 

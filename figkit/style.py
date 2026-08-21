@@ -17,6 +17,7 @@ Resolution order for a property, innermost first:
 
 from __future__ import annotations
 
+import contextvars
 from typing import Any, Iterable, Mapping
 
 from .colors import parse_color, to_hex
@@ -278,7 +279,8 @@ class Theme:
         for r, s in (roles or {}).items():
             self.roles[str(r).lower()] = Style(self.roles.get(str(r).lower()), s)
         self.palette.update({str(k): v for k, v in (palette or {}).items()})
-        self.styles.update({str(k): Style(v) for k, v in (styles or {}).items()})
+        self.styles.update({str(k).lstrip("."): Style(v)
+                            for k, v in (styles or {}).items()})
 
     # -- derivation -----------------------------------------------------
     def derive(self, **kw) -> "Theme":
@@ -446,11 +448,15 @@ DEFAULT_THEME = Theme(
 # Ambient theme (used when an element has no theme and no figure yet)
 # --------------------------------------------------------------------------
 
-_theme_stack = [DEFAULT_THEME]
+# A ContextVar rather than a module global: concurrent threads and asyncio
+# tasks each get their own ambient theme instead of trampling one stack.
+_theme_var: contextvars.ContextVar = contextvars.ContextVar("figkit_theme",
+                                                            default=None)
 
 
 def current_theme() -> Theme:
-    return _theme_stack[-1]
+    """The theme in effect right now (see :class:`use_theme`)."""
+    return _theme_var.get() or DEFAULT_THEME
 
 
 class use_theme:
@@ -462,13 +468,16 @@ class use_theme:
 
     def __init__(self, theme: Theme):
         self.theme = theme if isinstance(theme, Theme) else Theme(theme)
+        self._token = None
 
     def __enter__(self) -> Theme:
-        _theme_stack.append(self.theme)
+        self._token = _theme_var.set(self.theme)
         return self.theme
 
     def __exit__(self, *exc):
-        _theme_stack.pop()
+        if self._token is not None:
+            _theme_var.reset(self._token)
+            self._token = None
         return False
 
 

@@ -40,7 +40,8 @@ fig.save("figure.png", scale=2)                 # 2x pixel density
   parent; `to_front()` / `to_back()` reorder.
 * **Create the `Figure` first**, then the elements. Elements resolve their
   theme through their parent, so `with Figure(theme=T) as fig:` makes `T`
-  apply to everything created inside.
+  apply to everything created inside. (The ambient figure and theme live in
+  `contextvars`, so concurrent threads/tasks don't interfere.)
 
 ---
 
@@ -56,6 +57,7 @@ fig.save("figure.png", scale=2)                 # 2x pixel density
 | relative place | `el.right_of(other, gap=24, align="top", dx=0, dy=0)` |
 | put inside | `el.inside(other, anchor="se", pad=8)` |
 | anchor | `el.n .s .e .w .ne .nw .se .sw .center`, `el.at_angle(30)`, `el.uv(u, v)` |
+| anchor on an arrow | `c.mid`, `c.anchor_at(0.25)` — live, follows the arrow |
 | offset anchor | `el.e + (6, 0)` |
 | arrow | `arrow(a.e, b.w, label="x")` |
 | orthogonal | `elbow(a.e, b.w, stub=14, corner=6)` |
@@ -134,6 +136,15 @@ Anchors carry an outward **normal**, which is what makes `elbow` and `curve`
 leave a box sensibly. Passing a whole *element* as a connector endpoint
 (`arrow(a, b)`) picks the border point facing the other end automatically.
 
+Connectors expose live anchors along their own path, so you can hang things
+off an arrow and they keep up when its endpoints move:
+
+```python
+link = arrow(a.e, b.w)
+Box("gate").center_at(link.mid)          # live: follows the arrow
+arrow(note.s, link.anchor_at(0.25))
+```
+
 ---
 
 ## 5. Elements
@@ -207,8 +218,13 @@ Key kwargs: `head`/`tail` (`triangle`, `stealth`, `open`, `circle`, `diamond`,
 `square`, `bar`, `cross`, `none`), `head_size`, `gap`/`start_gap`/`end_gap`
 (pull the ends back), `start_side`/`end_side` (force an edge),
 `label`, `label_pos` (0..1 along the path), `label_offset`, `label_side`
-(`auto`/`above`/`below`/`center`), `label_bg`, plus any paint property
-(`stroke`, `stroke_width`, `stroke_dash`, `opacity`).
+(`auto`/`above`/`below`/`center`), `label_rotate` (align the label to the
+path), `label_bg`, plus any paint property (`stroke`, `stroke_width`,
+`stroke_dash`, `opacity`).
+
+On connectors and other line-like elements (`Line`, `Polyline`, `Path`,
+`Brace`) there is no geometric width, so **`width=` means stroke width** —
+`curve(src.s, dst.n, opacity=w, width=0.3 + 2 * w)` does what it looks like.
 
 `bend` deepens the bow **along the anchors' facing direction** — `curve(a.s,
 b.s, bend=0.5)` dips below both boxes. For plain points there is no normal to
@@ -255,10 +271,22 @@ targets, so it re-fits if they move later.
 Resolution order for any property, innermost first:
 
 1. keyword on the element — `Box("x", fill="red")`
-2. the element's `style=` (a `Style`, a dict, a named style, or a list)
-3. inherited text properties from enclosing groups (font, colour, alignment)
-4. themes on the element / its ancestors: **role override**, then **base token**
-5. the default theme, then a hard-coded fallback
+2. the element's `style=` when given a `Style`/dict
+3. its **classes**, last one winning — `Box("x", classes="block accent")`
+4. inherited text properties from enclosing groups (font, colour, alignment)
+5. themes on the element / its ancestors: **role override**, then **base token**
+6. the default theme, then a hard-coded fallback
+
+**Classes** are named styles defined by the theme, applied CSS-style:
+
+```python
+Box("solver", classes="stage accent")   # or style="stage accent"
+box.add_class("highlight"); box.remove_class("accent")
+```
+
+They resolve *lazily* against the live theme chain, so the same class can mean
+different things inside a differently themed group. An unknown class is a
+warning at render time, not an error. `.name` with a leading dot also works.
 
 ```python
 T = PAPER.derive(                        # or Theme(...), or DEFAULT_THEME.derive(...)
@@ -266,7 +294,7 @@ T = PAPER.derive(                        # or Theme(...), or DEFAULT_THEME.deriv
     palette={"brand": "#3B6EA5"},        # referenced as "@brand"
     box=Style(fill="#fff", stroke="#222", padding=(9, 13)),   # role overrides
     arrow=Style(stroke="#222", head_size=8),
-    styles={"solver": Style(fill="@brand", stroke="#1b1b1b")},  # named styles
+    styles={"solver": Style(fill="@brand", stroke="#1b1b1b")},  # classes
 )
 
 with Figure(theme=T) as fig:
@@ -290,7 +318,8 @@ Built-in themes: `DEFAULT_THEME`, `PAPER`, `SLIDE`, `DARK`, `BLUEPRINT`,
 every theme: `block`, `blue`, `green`, `warm`, `slate`, `ghost`, `plain`,
 `card`.
 
-Extras: `shadow=True` or `shadow={"dy": 2, "blur": 6, "opacity": 0.15}`;
+Extras: `shadow=True` or `shadow={"dy": 2, "blur": 6, "opacity": 0.15}` (an
+SVG filter — see gotcha 11);
 gradients via `fill={"type": "linear", "stops": ["#fff", "#333"], "angle": 90}`.
 
 Colour helpers: `mix, lighten, darken, alpha, saturate, contrast_color,
@@ -324,7 +353,8 @@ fr.at_data(some_box, x=6, y=0.8, anchor="s")
 
 Everything returned is an ordinary element, so you can annotate it:
 `arrow(note.se, Dot(fr.pt(50, 0.94)).nw)`. Also `xscale="log"`,
-`autoscale(xs, ys)`, `nice_ticks(lo, hi, n)`.
+`autoscale(xs, ys)`, `nice_ticks(lo, hi, n)`, and `clip_data=True` to clip
+marks to the plot area.
 
 ---
 
@@ -389,6 +419,10 @@ Install: `pip install figkit` · `figkit[latex]` (math) · `figkit[export]`
    measured with the theme's font.
 10. **8-digit hex and `rgba()` work** and are split into `fill` +
     `fill-opacity` on output, so rasterisers handle them correctly.
+11. **`shadow=` is an SVG filter, and cairosvg ignores filters.** It shows in
+    SVG and HTML but not in a cairosvg-rendered PNG/PDF; figkit warns when
+    that happens. Use `rsvg-convert`/`resvg`/chromium, or skip shadows for
+    figures headed to PNG.
 
 ---
 

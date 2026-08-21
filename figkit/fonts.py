@@ -12,6 +12,7 @@ width tables (Helvetica/Times/Courier), which are close enough for layout.
 from __future__ import annotations
 
 import functools
+import io
 import os
 import re
 import shutil
@@ -277,6 +278,7 @@ class Font:
         self._hmtx = None
         self._glyphset = None
         self._kern = None
+        self._bytes: bytes | None = None
         self.metrics = FontMetrics()
         self._core = self._pick_core()
         if path:
@@ -299,11 +301,17 @@ class Font:
             self.path = None
             return
         try:
+            # Read into memory rather than handing TTFont a path: lazy=True
+            # would otherwise hold an OS file handle open for the process's
+            # lifetime, and a figure using many faces can exhaust the limit.
+            with open(self.path, "rb") as fh:
+                self._bytes = fh.read()
             if self.path.lower().endswith((".ttc", ".otc")):
-                coll = TTCollection(self.path, lazy=True, fontNumber=0)
+                coll = TTCollection(io.BytesIO(self._bytes), lazy=True,
+                                    fontNumber=0)
                 tt = coll.fonts[0]
             else:
-                tt = TTFont(self.path, lazy=True, fontNumber=0)
+                tt = TTFont(io.BytesIO(self._bytes), lazy=True, fontNumber=0)
             self._tt = tt
             upem = tt["head"].unitsPerEm
             hhea = tt["hhea"]
@@ -409,11 +417,14 @@ class Font:
 
     def font_data(self) -> bytes | None:
         """Raw bytes of the font file (for embedding in exported SVG)."""
+        if self._bytes is not None:
+            return self._bytes
         if not self.path:
             return None
         try:
             with open(self.path, "rb") as fh:
-                return fh.read()
+                self._bytes = fh.read()
+            return self._bytes
         except OSError:
             return None
 
@@ -422,7 +433,7 @@ class Font:
         return f"<Font {self.family!r} {self.weight} {self.style} [{where}]>"
 
 
-@functools.lru_cache(maxsize=256)
+@functools.lru_cache(maxsize=64)
 def _load_font(family: str, weight: int, style: str) -> Font:
     path = _resolve_family(family, weight, style)
     return Font(family, weight, style, path)

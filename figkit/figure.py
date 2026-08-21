@@ -47,13 +47,14 @@ class Figure(Group):
         self._viewbox = viewbox
         self.scale = float(scale)
         self._theme_token = None
+        self._container_token = None
         super().__init__(style=style, theme=theme or DEFAULT_THEME, add=False,
                          **props)
         self.parent = None
 
     # -- context manager -------------------------------------------------
     def __enter__(self) -> "Figure":
-        push_container(self)
+        self._container_token = push_container(self)
         self._theme_token = use_theme(self._theme or DEFAULT_THEME)
         self._theme_token.__enter__()
         return self
@@ -62,7 +63,8 @@ class Figure(Group):
         if self._theme_token is not None:
             self._theme_token.__exit__(*exc)
             self._theme_token = None
-        pop_container()
+        pop_container(self._container_token)
+        self._container_token = None
         return False
 
     def child_matrix(self) -> Affine:

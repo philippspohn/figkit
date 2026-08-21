@@ -141,6 +141,10 @@ class Frame(Group):
     def plot_area(self) -> BBox:
         return self.area
 
+    def clip_bbox(self) -> BBox:
+        """``clip_data=True`` clips to the plot area, not the axes and labels."""
+        return self.area
+
     def move(self, dx: float = 0.0, dy: float = 0.0) -> "Frame":
         """Move the frame: children *and* the data-space plot area."""
         if dx == 0 and dy == 0:

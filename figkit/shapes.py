@@ -480,6 +480,7 @@ class Path(Element):
     """A raw SVG path. Bounds are computed exactly from the path data."""
 
     role = "path"
+    STROKE_WIDTH_ALIAS = True
 
     def __init__(self, d: str, x: float = None, y: float = None, **kw):
         self._d = d or ""
@@ -546,6 +547,7 @@ class Polyline(Element):
 
     role = "path"
     closed = False
+    STROKE_WIDTH_ALIAS = True
 
     def __init__(self, points, close: bool = None, **kw):
         self._refs = list(points)

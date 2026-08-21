@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextvars
 import copy as _copy
 import itertools
 from typing import Iterable
@@ -11,7 +12,8 @@ from .style import (DEFAULT_THEME, FALLBACKS, INHERITED, Style, Theme,
                     current_theme, normalize_key)
 from .svgdoc import Node, RenderContext
 
-__all__ = ["Anchor", "Element", "Group", "active_container", "MISSING"]
+__all__ = ["Anchor", "Element", "Group", "active_container",
+           "split_classes", "MISSING"]
 
 
 class _Missing:
@@ -21,25 +23,46 @@ class _Missing:
 
 MISSING = _Missing()
 
-# Stack of containers that auto-adopt newly created elements
-# (populated by ``with Figure() as fig:``).
-_container_stack: list = []
+# Containers that auto-adopt newly created elements (populated by
+# ``with Figure() as fig:``).  A ContextVar rather than a module global so two
+# threads — or two asyncio tasks — can build figures at the same time without
+# stealing each other's elements.
+_container_var: contextvars.ContextVar = contextvars.ContextVar(
+    "figkit_containers", default=())
 
 
 def active_container():
-    return _container_stack[-1] if _container_stack else None
+    """The innermost container currently collecting new elements."""
+    stack = _container_var.get()
+    return stack[-1] if stack else None
 
 
-def push_container(c):
-    _container_stack.append(c)
+def push_container(container):
+    """Start collecting into ``container``; returns a token for :func:`pop_container`."""
+    return _container_var.set(_container_var.get() + (container,))
 
 
-def pop_container():
-    if _container_stack:
-        _container_stack.pop()
+def pop_container(token=None):
+    if token is not None:
+        _container_var.reset(token)
+        return
+    stack = _container_var.get()
+    if stack:
+        _container_var.set(stack[:-1])
 
 
 _id_counter = itertools.count(1)
+
+
+def split_classes(value) -> tuple:
+    """Normalise ``"a b"`` / ``[".a", "b"]`` into ``("a", "b")``."""
+    if value is None:
+        return ()
+    if isinstance(value, str):
+        parts = value.split()
+    else:
+        parts = list(value)
+    return tuple(str(p).lstrip(".") for p in parts if str(p).strip())
 
 
 # ==========================================================================
@@ -140,8 +163,11 @@ class Element:
 
     role = "element"
 
+    #: line-like elements have no geometric width, so ``width=`` means stroke
+    STROKE_WIDTH_ALIAS = False
+
     def __init__(self, x: float = 0.0, y: float = 0.0, w: float = None,
-                 h: float = None, *, style=None, theme: Theme = None,
+                 h: float = None, *, style=None, classes=(), theme: Theme = None,
                  name: str = None, z: float = 0.0, visible: bool = True,
                  opacity: float = None, transform: Affine = None,
                  clip: bool = False, add: bool = None, **props):
@@ -161,6 +187,7 @@ class Element:
         self._theme = theme
         self._ambient_theme = current_theme()
         self._raw_style = style
+        self.classes: tuple = split_classes(classes)
         self._style = Style()
         self._extra_props = props
         if opacity is not None:
@@ -177,28 +204,59 @@ class Element:
 
     # -- style plumbing --------------------------------------------------
     def _set_style(self, style, props: dict) -> None:
+        """Split ``style=`` into class names (lazy) and literal styles (eager)."""
+        if self.STROKE_WIDTH_ALIAS and "width" in props:
+            props = dict(props)
+            props.setdefault("stroke_width", props.pop("width"))
         resolved = []
         for item in (style if isinstance(style, (list, tuple)) else [style]):
             if item is None:
                 continue
             if isinstance(item, str):
-                resolved.append(self._named_style(item))
+                self.classes = self.classes + split_classes(item)
             else:
                 resolved.append(item)
         self._style = Style(*resolved, **props)
         self.invalidate()
 
-    def _named_style(self, name: str) -> Style:
+    def class_style(self, name: str) -> Style | None:
+        """The style a class name resolves to in this element's theme chain."""
+        key = str(name).lstrip(".")
         for th in self.theme_chain():
-            if name in th.styles:
-                return th.styles[name]
-        raise KeyError(f"unknown named style {name!r}")
+            if key in th.styles:
+                return th.styles[key]
+        return None
+
+    def add_class(self, *names) -> "Element":
+        """Add style classes (later classes win over earlier ones)."""
+        for name in names:
+            self.classes = self.classes + split_classes(name)
+        return self.invalidate()
+
+    def remove_class(self, *names) -> "Element":
+        drop = set()
+        for name in names:
+            drop.update(split_classes(name))
+        self.classes = tuple(c for c in self.classes if c not in drop)
+        return self.invalidate()
+
+    def has_class(self, name: str) -> bool:
+        return str(name).lstrip(".") in self.classes
 
     def restyle(self, *styles, **props) -> "Element":
-        """Merge more style on top of this element's own style."""
+        """Merge more style on top of this element's own style.
+
+        String arguments are treated as class names.
+        """
+        if self.STROKE_WIDTH_ALIAS and "width" in props:
+            props = dict(props)
+            props.setdefault("stroke_width", props.pop("width"))
         merged = [self._style]
         for item in styles:
-            merged.append(self._named_style(item) if isinstance(item, str) else item)
+            if isinstance(item, str):
+                self.add_class(item)
+            elif item is not None:
+                merged.append(item)
         self._style = Style(*merged, **props)
         self.invalidate()
         return self
@@ -245,6 +303,10 @@ class Element:
         key = normalize_key(name)
         if key in self._style:
             return self._resolve_value(self._style[key])
+        for class_name in reversed(self.classes):     # later classes win
+            cls = self.class_style(class_name)
+            if cls is not None and key in cls:
+                return self._resolve_value(cls[key])
         if key in INHERITED:
             node = self.parent
             while node is not None:
@@ -690,6 +752,8 @@ class Element:
 
     def _wrapper_attrs(self, ctx: RenderContext) -> dict:
         attrs = {}
+        if self.classes:
+            attrs["class"] = " ".join(self.classes)
         if not self._transform.is_identity:
             attrs["transform"] = self._transform.to_svg()
         op = self.prop("opacity", None)
@@ -702,6 +766,10 @@ class Element:
     def render(self, ctx: RenderContext) -> Node | None:
         if not self.visible:
             return None
+        for class_name in self.classes:
+            if self.class_style(class_name) is None:
+                ctx.warn(f"unknown style class {class_name!r} on "
+                         f"{type(self).__name__}")
         self._ensure()
         content = self._render_content(ctx)
         if content is None:
@@ -759,12 +827,13 @@ class Group(Element):
 
     role = "group"
 
-    def __init__(self, *children, style=None, theme=None, name=None, z=0.0,
-                 visible=True, opacity=None, clip=False, add=None, **props):
+    def __init__(self, *children, style=None, classes=(), theme=None, name=None,
+                 z=0.0, visible=True, opacity=None, clip=False, add=None,
+                 **props):
         self._children: list = []
-        super().__init__(0, 0, None, None, style=style, theme=theme, name=name,
-                         z=z, visible=visible, opacity=opacity, clip=clip,
-                         add=add, **props)
+        super().__init__(0, 0, None, None, style=style, classes=classes,
+                         theme=theme, name=name, z=z, visible=visible,
+                         opacity=opacity, clip=clip, add=add, **props)
         flat = []
         for c in children:
             if c is None:
@@ -878,6 +947,10 @@ class Group(Element):
     def _measure(self) -> None:
         pass
 
+    def clip_bbox(self) -> BBox:
+        """The rectangle ``clip=True`` clips to. Subclasses may narrow it."""
+        return self.bbox
+
     def move(self, dx: float = 0.0, dy: float = 0.0) -> "Group":
         """Move every child (keeps the group's own transform clean)."""
         if dx == 0 and dy == 0:
@@ -915,7 +988,7 @@ class Group(Element):
         g = Node("g")
         g.add(*nodes)
         if self.clip:
-            bb = self.bbox
+            bb = self.clip_bbox()
             clip_node = Node("clipPath").add(
                 Node("rect", x=bb.x, y=bb.y, width=bb.w, height=bb.h))
             cid = ctx.add_def(clip_node)
