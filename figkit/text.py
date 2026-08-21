@@ -180,6 +180,29 @@ def layout_text(text: str, font_family=None, font_size: float = 14.0,
                       baseline_last=last.baseline)
 
 
+def _merge_runs(runs: list) -> list:
+    """Join neighbouring plain-text runs that share styling.
+
+    Emitting one ``<text>`` per *word* would pin each word to an absolute x —
+    exact, but if the viewer lacks the declared font the substitute's wider
+    glyphs collide. One ``<text>`` per phrase lets the renderer space the words
+    itself, so a substituted font degrades gracefully instead.
+    """
+    out: list = []
+    for run in runs:
+        prev = out[-1] if out else None
+        if (prev is not None and prev.kind == "text" and run.kind == "text"
+                and prev.weight == run.weight and prev.style == run.style
+                and abs((prev.x + prev.width) - run.x) < 0.01):
+            out[-1] = Run("text", prev.content + run.content,
+                          prev.width + run.width, max(prev.ascent, run.ascent),
+                          max(prev.descent, run.descent), prev.x,
+                          prev.font_size, prev.weight, prev.style)
+        else:
+            out.append(run)
+    return out
+
+
 def _fam(font_family):
     if font_family is None:
         return None
@@ -358,6 +381,7 @@ class Text(Element):
         for line in lay.lines:
             if not line.runs:
                 continue
+            runs = _merge_runs(line.runs)
             if anchor == "start":
                 x0 = bb.x
             elif anchor == "end":
@@ -365,7 +389,7 @@ class Text(Element):
             else:
                 x0 = bb.x + (bb.w - line.width) / 2.0
             by = bb.y + line.baseline
-            for run in line.runs:
+            for run in runs:
                 rx = x0 + run.x
                 if run.kind == "math":
                     mr = run.math

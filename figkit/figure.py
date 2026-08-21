@@ -220,6 +220,22 @@ class Figure(Group):
         from .export import to_pdf
         return to_pdf(self, path, **kw)
 
+    def audit(self, **options):
+        """Check the figure for the mistakes you would otherwise spot by eye.
+
+        Returns a :class:`~figkit.audit.Report` that is falsy when nothing
+        looks wrong, so ``print(fig.audit())`` is usually all you need::
+
+            with Figure() as fig:
+                ...
+            print(fig.audit())
+
+        See :func:`figkit.audit.audit` for the individual checks and how to
+        switch them off.
+        """
+        from .audit import audit as run_audit
+        return run_audit(self, **options)
+
     def show(self, path=None) -> str:
         """Write an HTML preview and return its path (handy while iterating)."""
         path = path or "figure.html"

@@ -61,6 +61,9 @@ from .fonts import get_font, measure_text, register_font, text_extents
 from .mathtext import (latex_available, math_available, render_math,
                        set_latex_preamble, set_math_fontset)
 
+# -- checking ---------------------------------------------------------------
+from .audit import Finding, Report, audit
+
 # -- output -----------------------------------------------------------------
 from .figure import Figure
 from .export import ExportError, available_backends, save_figure
@@ -99,6 +102,8 @@ __all__ = [
     "get_font", "measure_text", "text_extents", "register_font",
     "render_math", "math_available", "latex_available", "set_math_fontset",
     "set_latex_preamble",
+    # checking
+    "audit", "Report", "Finding",
     # output
     "Figure", "save_figure", "available_backends", "ExportError",
 ]

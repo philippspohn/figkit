@@ -75,8 +75,9 @@ with Figure(theme=T, pad=26, background="#ffffff") as fig:
     # ---- column 1: inputs ------------------------------------------------
     mesh_m = mesh_blob(3).at(0, 0)
     mesh_n = mesh_blob(11).below_of(mesh_m, gap=70)
-    Text("$\\mathcal{M}$", font_size=16).right_of(mesh_m, gap=4, align="center")
-    Text("$\\mathcal{N}$", font_size=16).right_of(mesh_n, gap=4, align="center")
+    # lifted clear of the arrows that leave each mesh (fig.audit() flags a clip)
+    Text("$\\mathcal{M}$", font_size=16).right_of(mesh_m, gap=4, dy=-16)
+    Text("$\\mathcal{N}$", font_size=16).right_of(mesh_n, gap=4, dy=-16)
 
     TOP = mesh_m.bbox.cy          # the two horizontal "lanes" of the figure
     BOT = mesh_n.bbox.cy
@@ -136,7 +137,7 @@ with Figure(theme=T, pad=26, background="#ffffff") as fig:
 
     c_pi = Matrix(rand4(), cell=15, cmap="viridis")
     c_pi.above_of(fuse, gap=54).right_of(losses, gap=34)
-    Text("$C^{\\Pi}_{\\mathcal{MN}}$", font_size=14).right_of(c_pi, gap=7)
+    Text("$C^{\\Pi}_{\\mathcal{MN}}$", font_size=14).above_of(c_pi, gap=7)
 
     # ---- column 7: outputs ------------------------------------------------
     out_m = colored_mesh(3).right_of(c_pi, gap=78).center_at(None, TOP)

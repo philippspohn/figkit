@@ -36,7 +36,8 @@ class Panel(Box):
     role = "panel"
     default_padding = 0
 
-    def __init__(self, targets=None, pad=16, label=None, label_pos: str = "nw",
+    def __init__(self, targets=None, pad=16, label=None,
+                 label_pos: str = "above_left",
                  label_gap: float = 6.0, label_style=None, follow: bool = True,
                  **kw):
         if targets is None:

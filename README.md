@@ -23,6 +23,17 @@ fig.save("figure.png", scale=2)
 
 ![quickstart](docs/images/00_quickstart.png)
 
+**Check your work without looking at it.** `fig.audit()` reports the mistakes
+that are obvious in a picture and invisible in the code — and stays quiet about
+deliberate overlap, so a clean report means something:
+
+```
+>>> print(fig.audit())
+figkit audit: 2 issues (1 overlap, 1 contrast) in 34 elements
+  overlap    Box('Decoder') covers Text('$z$') (240px², 61% of it)  at (196, 41)
+  contrast   Box('Encoder'): text #dbeafe on #f3f4f6 has contrast 1.1:1 (want 3.0:1)  at (60, 17)
+```
+
 ---
 
 ## Install
@@ -151,6 +162,7 @@ everything.
 | **Placement** | `at` `move` `center_at` `right_of` `left_of` `above_of` `below_of` `inside` `align_to` `span_x` `resize` `rotate` |
 | **Layout** | `align` `distribute_h/v` `spread_h/v` `hstack` `vstack` `grid` `fit` `between` `center_on` `circular` `same_size` `bbox_of` |
 | **Data** | `Frame` (`pt` `line` `scatter` `bars` `area_fill` `region` `axes` `gridlines`), `nice_ticks` |
+| **Checking** | `fig.audit()` → `Report` (`overlap` `overflow` `contrast` `crossing` `degenerate` `offscreen`), `el.ignore_audit()` |
 | **Style** | `Style` `Theme` `use_theme`, classes (`classes=`, `add_class`), themes `PAPER` `SLIDE` `DARK` `BLUEPRINT` `MINIMAL` `SOFT` |
 | **Colour** | `mix` `lighten` `darken` `alpha` `colormap` `palette` `contrast_color` `to_hex` |
 
@@ -180,7 +192,7 @@ Anchors on every element: `n s e w ne nw se sw center`, plus `at_angle(deg)`,
 
 ```bash
 pip install -e ".[dev]"
-pytest                       # 177 tests, including a smoke test per example
+pytest                       # 216 tests; every example must audit clean
 python examples/01_pipeline.py
 ```
 

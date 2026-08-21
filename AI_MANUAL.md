@@ -17,9 +17,16 @@ with Figure(pad=24) as fig:                     # auto-collects everything below
     b = Box("Decoder", style="blue").right_of(a, gap=60)
     arrow(a.e, b.w, label="$z$")
 
+print(fig.audit())                              # ← check before you export
 fig.save("figure.svg")
 fig.save("figure.png", scale=2)                 # 2x pixel density
 ```
+
+**Always run `fig.audit()` before you finish.** It catches, without rendering
+anything, the mistakes you would otherwise only see by looking at the picture:
+overlapping elements, labels sticking out of their boxes, unreadable colour
+combinations, arrows through boxes they do not connect. It prints one line per
+problem with coordinates, and `no issues` when the figure is clean.
 
 ---
 
@@ -70,6 +77,7 @@ fig.save("figure.png", scale=2)                 # 2x pixel density
 | midpoint | `between(a, b)` |
 | bounds only | `bbox_of([a, b, c])` |
 | data space | `fr = Frame(w=400, h=220, xlim=(0,10), ylim=(0,1))`; `fr.pt(x, y)` |
+| **check** | `print(fig.audit())` — do this before exporting |
 | export | `fig.save("f.svg" / "f.png" / "f.pdf" / "f.html")` |
 
 ---
@@ -394,7 +402,46 @@ Install: `pip install figkit` · `figkit[latex]` (math) · `figkit[export]`
 
 ---
 
-## 13. Gotchas
+## 13. Checking your work: `fig.audit()`
+
+```python
+report = fig.audit()
+print(report)                # one line per problem, or "no issues"
+if report: ...               # falsy when the figure is clean
+report.raise_if_any()        # turn it into an assertion, for tests
+report.by_kind("overlap")    # the raw findings, for programmatic use
+```
+
+Each finding has `.kind`, `.message`, `.severity` (`error`/`warning`),
+`.where` (a point to look at) and `.elements`. The checks:
+
+| kind | what it means |
+|---|---|
+| `overlap` | two elements collide, or one is painted over something it hides |
+| `overflow` | a label sticks out of the shape it belongs to |
+| `contrast` | text is too close in luminance to what is behind it |
+| `crossing` | a connector passes through an element it does not connect |
+| `degenerate` | a zero-size shape or a zero-length arrow |
+| `offscreen` | content outside a pinned canvas (auto-sized figures cannot have any) |
+
+**It is built to stay quiet about deliberate overlap**, so a clean report is
+meaningful. It already knows that labels sit inside boxes, that panels sit
+behind their contents, that arrows touch the things they connect, that
+adjacent matrix cells share edges, and that anything with `z < 0` is a
+backdrop. Decorative shapes drawn together under one group may overlap freely.
+
+When it flags something you meant, say so in the code:
+
+```python
+arrow(spine_bottom, spine_top).ignore_audit()   # runs behind the nodes on purpose
+Box("watermark", audit=False)
+fig.audit(ignore=[element])                     # or skip specific elements
+fig.audit(crossing=False, contrast=False)       # or switch off a whole check
+fig.audit(overlap="all")                        # stricter: every partial overlap
+fig.audit(min_contrast=4.5)                     # WCAG AA for body text
+```
+
+## 14. Gotchas
 
 1. **`Group` takes ownership.** `Group(a, b)` and `fit(a, b)` *reparent* their
    children. To only read a combined bounding box, use `bbox_of([a, b])`.
@@ -419,14 +466,17 @@ Install: `pip install figkit` · `figkit[latex]` (math) · `figkit[export]`
    measured with the theme's font.
 10. **8-digit hex and `rgba()` work** and are split into `fill` +
     `fill-opacity` on output, so rasterisers handle them correctly.
-11. **`shadow=` is an SVG filter, and cairosvg ignores filters.** It shows in
+11. **A viewer without your font can make words collide** in plain SVG:
+    positions are absolute, so a wider substitute overflows them. Export with
+    `embed_fonts=True`, or `text_as_paths=True` (what PNG/PDF already do).
+12. **`shadow=` is an SVG filter, and cairosvg ignores filters.** It shows in
     SVG and HTML but not in a cairosvg-rendered PNG/PDF; figkit warns when
     that happens. Use `rsvg-convert`/`resvg`/chromium, or skip shadows for
     figures headed to PNG.
 
 ---
 
-## 14. Worked pattern
+## 15. Worked pattern
 
 ```python
 from figkit import *
@@ -461,9 +511,13 @@ with Figure(theme=T, pad=26, background="#ffffff") as fig:
     Text("Figure 1: the model.", font_size=11, color="@muted", align="left") \
         .below_of(loss, gap=18).align_to(inp, "left")
 
+print(fig.audit())            # catches overlaps, overflow, unreadable text
 fig.save("figure.svg")
 fig.save("figure.png", scale=2)
 ```
 
-**Workflow tip:** export a PNG and *look at it* after each structural change.
-Overlaps and collisions are obvious visually and invisible in the code.
+**Workflow:** build, then `print(fig.audit())` after each structural change.
+A clean report means no element is covering another, no label has escaped its
+box and no text is unreadable — the mistakes that are obvious in a picture and
+invisible in the code. Export and look at the PNG for the things the audit
+cannot judge: whether the composition actually reads well.

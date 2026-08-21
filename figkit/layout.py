@@ -323,12 +323,16 @@ def _rc(idx: int, cols: int, rows: int, order: str) -> tuple:
 # Containers
 # ==========================================================================
 
-def fit(*items, pad=16, label=None, label_pos: str = "nw", name: str = None,
-        style=None, **panel_style) -> Group:
+def fit(*items, pad=16, label=None, label_pos: str = "above_left",
+        name: str = None, style=None, **panel_style) -> Group:
     """Wrap elements in a container box sized around them.
 
     Returns a :class:`Group` holding the panel (behind) plus the items, so the
     whole thing moves as a unit.  ``result.panel`` is the box itself.
+
+    ``label_pos`` defaults to ``"above_left"`` (outside the box, where it
+    cannot collide with the contents); ``"nw"``, ``"n"``, ``"below"`` and the
+    other anchors also work.
 
     >>> frame = fit(ipm, cmn, pad=20, label="Fused operation", dash=True)
     >>> frame.below_of(header, gap=24)

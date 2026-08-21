@@ -1,4 +1,4 @@
-"""Smoke test: every example script must run and produce a valid SVG."""
+"""Smoke test: every example must run, emit valid SVG, and audit clean."""
 
 import os
 import runpy
@@ -30,3 +30,18 @@ def test_example_runs(name, tmp_path):
         root = ET.fromstring(text[text.index("<svg"):])
         assert root.tag.endswith("svg")
         assert float(root.get("width").rstrip("px")) > 0
+
+
+@pytest.mark.parametrize("name", EXAMPLES)
+def test_example_audits_clean(name):
+    """The shipped examples must not trip figkit's own checks."""
+    import runpy
+    import warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        namespace = runpy.run_path(os.path.join(ROOT, "examples", name),
+                                   run_name="__audit_probe__")
+    fig = namespace.get("fig")
+    assert fig is not None, f"{name} does not expose a `fig`"
+    report = fig.audit()
+    assert not report, str(report)

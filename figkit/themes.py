@@ -51,6 +51,7 @@ SLIDE = DEFAULT_THEME.derive(
 DARK = DEFAULT_THEME.derive(
     name="dark",
     color="#e8eaed",
+    background="#141821",
     stroke_width=1.5,
     palette={
         "text": "#e8eaed", "muted": "#9aa4b2", "line": "#8b95a5",
@@ -80,6 +81,7 @@ DARK = DEFAULT_THEME.derive(
 #: Technical-drawing look: thin monochrome lines on a tinted ground.
 BLUEPRINT = DEFAULT_THEME.derive(
     name="blueprint",
+    background="#0b2447",
     font_family=MONO,
     font_size=12,
     color="#dbeafe",

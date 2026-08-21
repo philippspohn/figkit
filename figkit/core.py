@@ -170,7 +170,8 @@ class Element:
                  h: float = None, *, style=None, classes=(), theme: Theme = None,
                  name: str = None, z: float = 0.0, visible: bool = True,
                  opacity: float = None, transform: Affine = None,
-                 clip: bool = False, add: bool = None, **props):
+                 clip: bool = False, audit: bool = True, add: bool = None,
+                 **props):
         self._x = float(x)
         self._y = float(y)
         self._w = None if w is None else float(w)
@@ -183,6 +184,8 @@ class Element:
         self.z = z
         self._visible = bool(visible)
         self.clip = clip
+        #: set False to exempt this element from :meth:`Figure.audit`
+        self.audit_enabled = bool(audit)
         self.uid = f"e{next(_id_counter)}"
         self._theme = theme
         self._ambient_theme = current_theme()
@@ -728,6 +731,11 @@ class Element:
         self._visible = bool(value)
         self.invalidate()
 
+    def ignore_audit(self) -> "Element":
+        """Exempt this element from :meth:`figkit.Figure.audit` checks."""
+        self.audit_enabled = False
+        return self
+
     def hide(self) -> "Element":
         """Keep the element but stop drawing it (and stop it affecting bounds)."""
         self.visible = False
@@ -828,12 +836,13 @@ class Group(Element):
     role = "group"
 
     def __init__(self, *children, style=None, classes=(), theme=None, name=None,
-                 z=0.0, visible=True, opacity=None, clip=False, add=None,
-                 **props):
+                 z=0.0, visible=True, opacity=None, clip=False, audit=True,
+                 add=None, **props):
         self._children: list = []
         super().__init__(0, 0, None, None, style=style, classes=classes,
                          theme=theme, name=name, z=z, visible=visible,
-                         opacity=opacity, clip=clip, add=add, **props)
+                         opacity=opacity, clip=clip, audit=audit, add=add,
+                         **props)
         flat = []
         for c in children:
             if c is None:

@@ -111,12 +111,14 @@ class Shape(Element):
         #       True -> same; False -> never wrap; a number -> wrap at it.
         wrap = self._wrap
         inner_w = max(1.0, float(self._w or 0) - left - right)
+        # Padding can exceed a small shape (a Circle with generous padding, say).
+        # Wrapping to a sliver would collapse the label to zero width, so only
+        # wrap when there is a usable amount of room.
+        usable = inner_w if inner_w > 8 else None
         if wrap is False:
             wrap = None
-        elif wrap is True:
-            wrap = inner_w if self._explicit_w else None
-        elif wrap is None:
-            wrap = inner_w if self._explicit_w else None
+        elif wrap is True or wrap is None:
+            wrap = usable if self._explicit_w else None
         if self._label is not None:
             self._label._wrap = wrap if wrap else None
             self._label.invalidate()
@@ -152,10 +154,18 @@ class Shape(Element):
         self._place_content()
 
     def _inner_box(self) -> BBox:
+        """The content area. Falls back to the whole shape when padding
+        would leave no room — otherwise content drifts toward the padding
+        instead of staying centred on a small shape."""
         top, right, bottom, left = self.padding()
-        return BBox(self._x + left, self._y + top,
-                    max(0.0, (self._w or 0) - left - right),
-                    max(0.0, (self._h or 0) - top - bottom))
+        w = (self._w or 0) - left - right
+        h = (self._h or 0) - top - bottom
+        x, y = self._x + left, self._y + top
+        if w <= 0:
+            x, w = self._x, (self._w or 0)
+        if h <= 0:
+            y, h = self._y, (self._h or 0)
+        return BBox(x, y, w, h)
 
     def _place_content(self) -> None:
         inner = self._inner_box()
@@ -172,7 +182,7 @@ class Shape(Element):
             x = _halign_start(inner, ib.w, halign)
             if item is self._label:
                 item._x = x if not self._label._wrap else inner.x
-                if self._label._wrap:
+                if self._label._wrap and inner.w > 0:
                     item._w = inner.w
                 item._y = y
                 if valign in ("center", "middle", "c"):

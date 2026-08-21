@@ -91,8 +91,10 @@ with Figure(theme=T, pad=28, background=PAPER_BG) as fig:
     # residual stream spine + its arrowhead
     spine_bottom = plus_nodes[0].bbox.y1 + 46
     spine_top = plus_nodes[-1].bbox.y0 - 20
+    # The spine deliberately runs behind the junction nodes, so opt it out of
+    # the crossing check rather than have fig.audit() report it every run.
     arrow((residual_x, spine_bottom), (residual_x, spine_top),
-          stroke="#b9b2a8", stroke_width=1.6, head_size=9)
+          stroke="#b9b2a8", stroke_width=1.6, head_size=9).ignore_audit()
     Text("Residual\nstream", font_size=12, color="#5f584f",
          align="center").at(residual_x, spine_bottom + 10, anchor="n")
 
@@ -110,9 +112,8 @@ with Figure(theme=T, pad=28, background=PAPER_BG) as fig:
         for j in range(i + 1, LAYERS):
             curve(feats.n, plus_nodes[j].e, stroke=ORANGE, stroke_width=1.4,
                   head="none", bend=0.12)
-        # highlighted junction dot
-        Dot(plus_nodes[i].bbox.anchor("center"), r=6.5, fill=ORANGE,
-            stroke="#ffffff", stroke_width=1.5)
+        # highlight the junction itself rather than stacking a dot on the "+"
+        plus_nodes[i].restyle(fill=ORANGE, stroke=ORANGE, color="#ffffff")
 
     Text("Neuron", font_size=12, color="#5f584f").below_of(
         neuron_boxes[0], gap=28).align_to(neuron_boxes[0], "center_x")

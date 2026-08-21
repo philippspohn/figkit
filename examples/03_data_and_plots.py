@@ -48,7 +48,7 @@ with Figure(pad=26, background="#ffffff") as fig:
     peak = Dot(fr.pt(50, runs["ours"][-1]), r=5, fill=COLORS["ours"])
     note = Box("best: {:.1%}".format(runs["ours"][-1]), style="card",
                font_size=11, padding=(5, 8))
-    note.above_of(peak, gap=30).left_of(peak, gap=8)
+    note.above_of(peak, gap=34).left_of(peak, gap=26)
     arrow(note.se, peak.nw, stroke="#9aa1ac", head_size=6, stroke_width=1)
 
     legend = Legend([(n, COLORS[n], {"marker": "line"}) for n in runs],
