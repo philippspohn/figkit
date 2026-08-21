@@ -132,19 +132,24 @@ arrow(note.se, fr.pt(50, 0.94))       # point at a data coordinate
 ## Gallery
 
 Each figure below is produced by the script of the same name in
-[`examples/`](https://github.com/philippspohn/figkit/tree/main/examples).
+[`examples/`](https://github.com/philippspohn/figkit/tree/main/examples). The
+first two are figkit reproductions of published figures, linked as reference —
+they are not affiliated with or endorsed by their authors.
 
 ### `01_pipeline.py` — an ML paper pipeline
 
 Themes, relative placement, live anchors, inline LaTeX, colour matrices,
-elbow routing and hand-built vector graphics.
+elbow routing and hand-built vector graphics. After the pipeline figure in
+[URSSM](https://dongliangcao.github.io/urssm/).
 
 ![pipeline](https://raw.githubusercontent.com/philippspohn/figkit/main/docs/images/01_pipeline.png)
 
 ### `02_attribution.py` — a two-panel blog explainer
 
 Programmatic node grids and hundreds of curved edges whose width and opacity
-come straight from the data.
+come straight from the data. After the replacement-model and attribution-graph
+diagram in Anthropic's
+[Circuit Tracing](https://transformer-circuits.pub/2025/attribution-graphs/methods.html).
 
 ![attribution](https://raw.githubusercontent.com/philippspohn/figkit/main/docs/images/02_attribution.png)
 

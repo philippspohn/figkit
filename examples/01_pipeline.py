@@ -1,5 +1,9 @@
 """A shape-matching pipeline figure, in the style of an ML paper.
 
+Structure after the pipeline figure in URSSM
+(https://dongliangcao.github.io/urssm/) — a reproduction for reference,
+not affiliated with or endorsed by its authors.
+
 Shows: themes, relative placement, live anchors, inline LaTeX, matrices,
 elbow routing and custom vector graphics.
 

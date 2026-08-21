@@ -1,5 +1,10 @@
 """A two-panel explainer figure in the style of an interpretability blog post.
 
+Structure after the replacement-model and attribution-graph diagram in
+Anthropic's Circuit Tracing
+(https://transformer-circuits.pub/2025/attribution-graphs/methods.html) —
+a reproduction for reference, not affiliated with or endorsed by its authors.
+
 Shows: two side-by-side panels, programmatic node grids, curved edges whose
 opacity and width come from data, and a shared caption block.
 
