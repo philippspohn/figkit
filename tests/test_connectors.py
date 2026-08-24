@@ -324,3 +324,24 @@ def test_tension_loosens_the_spline_through_waypoints():
     # Pinning the outer tangents survives either way.
     assert _controls(slack)[0].y == pytest.approx(a.e.point.y)
     assert _controls(tight)[0].y == pytest.approx(a.e.point.y)
+
+
+# -- heads on short connectors ----------------------------------------------
+
+@pytest.mark.parametrize("length", [3, 4, 6, 8, 12, 20])
+def test_a_short_connector_still_has_a_visible_shaft(length):
+    """A head bigger than the connector used to eat the whole line and
+    overshoot its start, leaving a stray triangle."""
+    conn = arrow((0, 0), (length, 0), add=False)
+    paths = re.findall(r'<path d="([^"]+)"', render(conn))
+    assert len(paths) == 2, "expected a stroke and a head"
+    stroke = abs_segments(paths[0])
+    xs = [stroke[0][1], stroke[-1][1]]
+    assert min(xs) >= -1e-6, "the shaft must not run backwards past the start"
+    assert max(xs) - min(xs) > 0.5, "the shaft must be visible"
+
+
+def test_heads_are_left_alone_when_there_is_room():
+    conn = arrow((0, 0), (200, 0), add=False)
+    paths = re.findall(r'<path d="([^"]+)"', render(conn))
+    assert paths[0] == "M0 0L190.329 0"

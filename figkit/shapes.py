@@ -685,15 +685,35 @@ def _is_live(obj) -> bool:
     return isinstance(obj, (Anchor, Element))
 
 
+def _center_and_radius(where, r) -> tuple:
+    """Read ``(center[, r])`` or ``(x, y[, r])`` positional arguments."""
+    args = list(where)
+    if len(args) >= 2 and all(isinstance(a, (int, float)) for a in args[:2]):
+        center = (args[0], args[1])
+        rest = args[2:]
+    elif args:
+        center, rest = args[0], args[1:]
+    else:
+        center, rest = (0, 0), []
+    if r is None:
+        r = rest[0] if rest else 3.0
+    return center, r
+
+
 class Dot(Element):
     """A small filled circle — plot markers, junction points, bullets."""
 
     role = "marker"
 
-    def __init__(self, center=(0, 0), r: float = 3.0, **kw):
+    def __init__(self, *where, r: float = None, **kw):
+        """``Dot(center, r)`` or ``Dot(x, y, r)`` — both read naturally, and
+        which one you reach for should not depend on remembering which this
+        class happens to take."""
+        center, radius = _center_and_radius(where, r)
         p = to_point(center)
-        self._r = float(r)
-        super().__init__(p.x - r, p.y - r, r * 2, r * 2, **kw)
+        self._r = float(radius)
+        super().__init__(p.x - self._r, p.y - self._r,
+                         self._r * 2, self._r * 2, **kw)
 
     @property
     def r(self) -> float:

@@ -1,6 +1,6 @@
 import pytest
 
-from figkit import Box, Style, Theme, use_theme
+from figkit import Box, Figure, Style, Text, Theme, use_theme
 from figkit.style import DEFAULT_THEME, normalize_dash
 
 
@@ -121,3 +121,57 @@ def test_class_names_reach_the_svg():
     with Figure() as fig:
         Box("x", classes="blue emphasis")
     assert 'class="blue emphasis"' in fig.to_svg(pretty=False)
+
+
+# -- unknown properties -----------------------------------------------------
+
+def test_a_misspelled_property_is_refused_not_ignored():
+    """The whole class of bug: a name figkit does not read used to be stored
+    and never looked at, so the figure silently rendered the default."""
+    from figkit.style import UnknownProperty
+
+    with pytest.raises(UnknownProperty):
+        Text("hi", add=False, sizee=8)
+    with pytest.raises(UnknownProperty):
+        Box("hi", add=False, colour="red")
+    with pytest.raises(UnknownProperty):
+        Style(wibble=1)
+
+
+def test_the_refusal_suggests_the_name_you_meant():
+    from figkit.style import UnknownProperty
+
+    with pytest.raises(UnknownProperty, match="stroke_width"):
+        Box("hi", add=False, strokewidth=2)
+
+
+def test_components_can_declare_properties_of_their_own():
+    from figkit.style import PROPS, UnknownProperty, register_props
+
+    with pytest.raises(UnknownProperty):
+        Style(wave_amplitude=3)
+    try:
+        register_props("wave_amplitude")
+        assert Style(wave_amplitude=3)["wave_amplitude"] == 3
+    finally:
+        PROPS.discard("wave_amplitude")
+
+
+def test_size_means_font_size_like_it_does_in_measure_text():
+    """measure_text takes size=; Text taking only font_size meant measuring at
+    one size and rendering at another."""
+    from figkit.fonts import measure_text
+
+    assert Text("hi", add=False, size=8).bbox == Text("hi", add=False,
+                                                      font_size=8).bbox
+    assert Text("Hello", add=False, size=7.5).bbox.w == pytest.approx(
+        measure_text("Hello", size=7.5), abs=0.01)
+
+
+def test_fill_on_text_means_its_colour():
+    """Text has no fill of its own, so dropping it renders the default."""
+    t = Text("hi", add=False, fill="#ff0000")
+    assert t.text_color() == "#ff0000"
+    # An explicit colour still wins.
+    assert Text("hi", add=False, fill="#ff0000", color="#00ff00") \
+        .text_color() == "#00ff00"

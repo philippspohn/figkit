@@ -34,9 +34,12 @@ problem with coordinates, and `no issues` when the figure is clean.
 
 * **Units are px. `y` grows downward** (SVG convention): `n` is the top edge,
   `s` the bottom.
-* **Nothing is auto-laid-out.** You place things; figkit measures them
-  accurately (real font metrics from the font file) so relative placement is
-  exact.
+* **Place things relative to each other, not at coordinates.** figkit measures
+  text from the real font file, so `right_of`, `hstack`, `grid` and `fit` land
+  exactly. Typing absolute numbers works but it is the slow path: a redesign
+  then means editing every number by hand, which is the single biggest source
+  of pain reported by people using this library. Reach for §3 and §9 first and
+  drop to coordinates only for the few things that genuinely need them.
 * **Anchors are live references.** `box.e` is not a coordinate — it resolves
   when read. Move the box afterwards and every arrow pointing at it follows.
 * **Every placement call returns `self`**, so it chains:
@@ -52,6 +55,25 @@ problem with coordinates, and `no issues` when the figure is clean.
   theme through their parent, so `with Figure(theme=T) as fig:` makes `T`
   apply to everything created inside. (The ambient figure and theme live in
   `contextvars`, so concurrent threads/tasks don't interfere.)
+
+---
+
+### Use the layout engine
+
+Most figures are rows, columns, grids and enclosures. Say that, and a later
+change to one label re-flows the rest:
+
+```python
+row = hstack([enc, mid, dec], gap=60, align="center")      # a Group
+col = vstack([row, caption], gap=18, align="center")
+grid(cells, cols=4, gap=(12, 12))
+fit(enc, mid, pad=20, label="Encoder stack")               # boxed cluster
+align([a, b, c], "top"); distribute_h([a, b, c], gap=24)
+```
+
+The full list is §9. `Matrix`, `LabelledMatrix`, `Table`, `Brace`, `Bracket`,
+`Legend`, `ColorBar` and `Panel` (§5, §8) already exist — check before building
+your own.
 
 ---
 
@@ -174,6 +196,56 @@ arrow(note.s, link.anchor_at(0.25))
 Common kwargs: `w, h, min_w, min_h, max_w, padding, wrap, align, valign,
 radius, fill, stroke, stroke_width, stroke_dash, opacity, shadow, rotate, z,
 name, style, theme`.
+
+**Every style property, and the aliases that reach it.** A name outside this
+table raises `UnknownProperty` with a suggestion rather than being accepted
+and ignored, so a typo costs you a traceback instead of a wrong figure. The
+booleans `bold=`, `italic=`, `underline=` and `monospace=` expand into these.
+
+| Property | Also accepted as |
+|---|---|
+| **Paint** | |
+| `fill` | `background`, `background_color`, `bg`, `facecolor`, `fill_color` |
+| `fill_opacity` | — |
+| `stroke` | `border`, `border_color`, `edgecolor`, `line_color`, `stroke_color` |
+| `stroke_width` | `border_width`, `linewidth`, `lw`, `stroke_w` |
+| `stroke_opacity` | — |
+| `stroke_dash` | `dash`, `dasharray`, `dashes`, `linestyle`, `ls`, `stroke_dasharray` |
+| `stroke_dashoffset` | — |
+| `stroke_linecap` | `cap`, `linecap` |
+| `stroke_linejoin` | `join`, `linejoin` |
+| `opacity` | `alpha` |
+| `shadow` | — |
+| `background` | — |
+| `image_opacity` | — |
+| **Geometry** | |
+| `radius` | `border_radius`, `corner_radius`, `rounding` |
+| `padding` | — |
+| **Type** | |
+| `font_family` | `family`, `font`, `fontfamily`, `typeface` |
+| `font_size` | `fontsize`, `size` |
+| `font_weight` | `fontweight`, `weight` |
+| `font_style` | `fontstyle` |
+| `font_variant` | — |
+| `color` | `fg`, `foreground`, `text_color` |
+| `line_height` | `leading`, `linespacing` |
+| `letter_spacing` | `tracking` |
+| `word_spacing` | — |
+| `text_align` | `align`, `ha`, `halign` |
+| `valign` | `va`, `vertical_align` |
+| `text_transform` | — |
+| `text_decoration` | — |
+| **Math** | |
+| `math_backend` | — |
+| `math_color` | — |
+| `math_scale` | — |
+| **Connectors** | |
+| `head` | `arrowhead` |
+| `head_size` | `headsize` |
+| `tail` | `arrowtail` |
+| `tail_size` | `tailsize` |
+
+`register_props("my_prop")` declares extras for a component of your own.
 
 **Geometry** — `Line(a, b)`, `Polyline(points)`, `Polygon(points)`,
 `Path("M0 0 L10 10 …")`, `Dot(center, r)`, `Marker(center, size, "diamond")`.
@@ -468,6 +540,11 @@ PNG/PDF need a converter: `pip install "figkit[export]"` (cairosvg), or
 `rsvg-convert` / `resvg` / `inkscape` / headless chromium on `PATH`.
 PNG and PDF outline text automatically, so they always match the SVG.
 
+On macOS, cairosvg often fails to import with `dlopen ... libcairo.2.dylib`
+even with Homebrew's cairo installed, because the loader does not look in
+`/opt/homebrew`. Either export `DYLD_FALLBACK_LIBRARY_PATH=$(brew --prefix
+cairo)/lib` or use `rsvg-convert` instead. SVG export needs nothing.
+
 Install: `pip install figkit` · `figkit[latex]` (math) · `figkit[export]`
 (PNG/PDF) · `figkit[all]`.
 
@@ -544,6 +621,24 @@ fig.audit(min_contrast=4.5)                     # WCAG AA for body text
     SVG and HTML but not in a cairosvg-rendered PNG/PDF; figkit warns when
     that happens. Use `rsvg-convert`/`resvg`/chromium, or skip shadows for
     figures headed to PNG.
+13. **A misspelled property raises.** `Text("hi", sizee=8)` is an error, not a
+    silent default. `size` and `font_size` are the same thing, and match
+    `measure_text(..., size=)`.
+14. **`rotate=` turns the block about `(x, y)`,** so a rotated label lands in
+    the same place whatever its length. `rotate_about=` picks another pivot;
+    `el.rotate(deg)` after construction still turns about the centre.
+15. **A missing glyph warns.** If the font has no glyph for a character, it
+    renders as an empty box and its measured width is `.notdef`'s, so figkit
+    says so and names the codepoint. `register_font` makes text export as
+    outlines, which also removes the viewer's fallback chain — a character
+    the registered font lacks becomes a guaranteed empty box.
+16. **A tiny `Box` looks like a circle,** because the theme's `radius=6` is
+    clamped to half the shorter side. Pass `radius=0` for small swatches and
+    data cells.
+17. **Arrow heads shrink to fit short connectors.** Below roughly 15pt the
+    head would swallow the shaft, so figkit scales it down and warns when the
+    result is much smaller than you asked for. Give short links more room, or
+    set `head_size=`.
 
 ---
 

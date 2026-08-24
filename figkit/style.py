@@ -23,7 +23,7 @@ from typing import Any, Iterable, Mapping
 from .colors import parse_color, to_hex
 
 __all__ = ["Style", "Theme", "DEFAULT_THEME", "use_theme", "current_theme",
-           "INHERITED", "ALIASES"]
+           "INHERITED", "ALIASES", "PROPS", "register_props", "UnknownProperty"]
 
 
 # --------------------------------------------------------------------------
@@ -36,6 +36,57 @@ INHERITED = frozenset({
     "color", "line_height", "letter_spacing", "word_spacing", "text_align",
     "valign", "text_transform", "math_color", "math_scale",
 })
+
+#: Every property figkit reads. A name outside this set is a mistake, not an
+#: extension: it would be accepted, stored and never looked at again, which is
+#: indistinguishable from the property having no effect. Components that want
+#: properties of their own add them with :func:`register_props`.
+PROPS = {
+    # paint
+    "fill", "fill_opacity", "stroke", "stroke_width", "stroke_opacity",
+    "stroke_dash", "stroke_dashoffset", "stroke_linecap", "stroke_linejoin",
+    "opacity", "shadow", "background", "image_opacity",
+    # geometry
+    "radius", "padding",
+    # type
+    "font_family", "font_size", "font_weight", "font_style", "font_variant",
+    "color", "line_height", "letter_spacing", "word_spacing", "text_align",
+    "valign", "text_transform", "text_decoration",
+    # math
+    "math_backend", "math_color", "math_scale",
+    # connectors
+    "head", "head_size", "tail", "tail_size",
+}
+
+
+class UnknownProperty(TypeError):
+    """Raised for a style property figkit would silently ignore."""
+
+
+def register_props(*names: str) -> None:
+    """Declare extra style properties, for components that read their own.
+
+    ``Style`` rejects unknown properties, so a component with a property of
+    its own registers it once::
+
+        class Waveform(Component):
+            ...
+        register_props("wave_amplitude")
+    """
+    for name in names:
+        PROPS.add(str(name).strip().lower().replace("-", "_"))
+
+
+def _reject_unknown(key: str, raw_key: str) -> None:
+    import difflib
+
+    near = difflib.get_close_matches(key, PROPS | set(ALIASES), n=3, cutoff=0.6)
+    hint = f" Did you mean {' or '.join(repr(n) for n in near)}?" if near else ""
+    raise UnknownProperty(
+        f"{raw_key!r} is not a figkit style property, and setting it would "
+        f"have no effect.{hint} Use register_props({key!r}) if a component of "
+        f"yours reads it.")
+
 
 #: Friendly aliases -> canonical property name.
 ALIASES = {
@@ -52,7 +103,8 @@ ALIASES = {
     "join": "stroke_linejoin", "linejoin": "stroke_linejoin",
     "corner_radius": "radius", "border_radius": "radius", "rounding": "radius",
     "text_color": "color", "fg": "color", "foreground": "color",
-    "fontsize": "font_size", "font": "font_family", "fontfamily": "font_family",
+    "size": "font_size", "fontsize": "font_size",
+    "font": "font_family", "fontfamily": "font_family",
     "family": "font_family", "typeface": "font_family",
     "weight": "font_weight", "fontweight": "font_weight",
     "fontstyle": "font_style",
@@ -105,6 +157,8 @@ def normalize_props(props: Mapping) -> dict:
                 out[prop] = value        # e.g. bold=600 or italic="oblique"
             continue
         key = ALIASES.get(key, key)
+        if key not in PROPS:
+            _reject_unknown(key, raw_key)
         if value is None:
             continue
         if key == "stroke_dash":
@@ -137,7 +191,8 @@ class Style(Mapping):
     """An immutable bag of visual properties.
 
     ``Style(fill="red") | Style(stroke="black")`` merges (right wins).
-    Unknown keys are kept, so components can define their own properties.
+    A property figkit does not read raises :class:`UnknownProperty` rather
+    than being kept and ignored; :func:`register_props` declares your own.
     """
 
     __slots__ = ("_props",)

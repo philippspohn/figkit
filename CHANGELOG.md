@@ -6,6 +6,47 @@ All notable changes to figkit are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **A style property figkit does not read now raises `UnknownProperty`**
+  instead of being stored and ignored. `Text("hi", sizee=8)` used to render at
+  the theme default with no complaint; it now fails with a suggestion. This is
+  a breaking change for code passing properties that never did anything.
+  Components with properties of their own declare them with
+  `register_props(...)`, and `PROPS` is the full list.
+- **`rotate=` on `Text` turns the block about `(x, y)`**, not about its own
+  centre. Pivoting on the centre displaced the text by half its own length, so
+  where a rotated label landed depended on how many characters it had — a
+  50pt label drifted 25pt. `rotate_about=` takes an explicit pivot, and
+  `el.rotate(deg)` after construction is unchanged.
+- Arrow heads shrink to fit connectors too short to hold them. A head larger
+  than the connector used to consume the whole shaft and overshoot its start,
+  drawing a stray triangle with no line.
+
+### Added
+
+- `size=` is an alias for `font_size=`, matching `measure_text(..., size=)`.
+  Measuring at one size and rendering at another was silent before.
+- `fill=` set directly on a `Text` means its colour. Text has no fill of its
+  own, so the property was being dropped.
+- A warning when the font has no glyph for a character: it renders as an empty
+  box and its measured width is `.notdef`'s, not the character's, so layout
+  computed from it is wrong. Names the codepoint, warns once per font and
+  character.
+- `Dot` accepts `Dot(x, y, r=...)` as well as `Dot(center, r)`, matching
+  `Circle` and every other element's `x, y` front door.
+
+### Documentation
+
+- The manual led with "nothing is auto-laid-out", which read as an instruction
+  to place everything by hand. It now points at `hstack`/`vstack`/`grid`/`fit`
+  and the existing `Matrix`, `Table`, `Brace` and `Legend` components first.
+- Every style property and its aliases are tabulated, so valid names no longer
+  have to be discovered by reading theme reprs.
+- Gotchas for the rotation pivot, missing glyphs, small-`Box` corner radius,
+  short-connector heads, and the macOS `DYLD_FALLBACK_LIBRARY_PATH` fix for
+  cairosvg.
+
 ### Fixed
 
 - `figkit.__version__` reported `0.1.0` from the 0.1.1 release. The number

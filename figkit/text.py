@@ -431,15 +431,32 @@ class Text(Element):
 
     >>> Text("Feature\\nExtractor", bold=True, font_size=16)
     >>> Text("loss $L_{\\\\mathrm{fmap}}$", color="#333")
+
+    ``rotate=`` turns the block about ``(x, y)``, so a rotated label stays
+    where you put it whatever its length. Pass ``rotate_about=`` for a
+    different pivot, or call :meth:`rotate` afterwards to turn it about its
+    own centre.
     """
 
     role = "text"
+
+    def text_color(self):
+        """The glyph colour.
+
+        Text has no fill of its own, so ``fill=`` set directly on a ``Text``
+        means its colour — writing it is a reasonable guess, and silently
+        drawing the default instead is not.
+        """
+        if "color" not in self._style and "fill" in self._style:
+            return self._resolve_value(self._style["fill"])
+        return self.prop("color")
+
     ANCHOR_MAP = {"left": "start", "start": "start", "center": "middle",
                   "middle": "middle", "right": "end", "end": "end"}
 
     def __init__(self, text="", x: float = 0.0, y: float = 0.0, *,
                  width: float = None, wrap: float = None, markup: bool = False,
-                 rotate: float = None, **kw):
+                 rotate: float = None, rotate_about=None, **kw):
         self._text = _norm_content(text)
         self._wrap = wrap if wrap is not None else width
         self._markup = markup
@@ -448,7 +465,11 @@ class Text(Element):
         if self._wrap:
             self._explicit_w = False
         if rotate:
-            self.rotate(rotate)
+            # Around (x, y), not the block's centre: pivoting on the centre
+            # displaces the text by half its own length, so where a rotated
+            # label lands would depend on how many characters it has.
+            self.rotate(rotate, about=(x, y) if rotate_about is None
+                        else rotate_about)
 
     # -- content ---------------------------------------------------------
     @property
@@ -487,7 +508,7 @@ class Text(Element):
             math_backend=self.prop("math_backend", "auto"),
             math_scale=float(self.prop("math_scale", 1.0) or 1.0),
             markup=self._markup,
-            color=self.prop("color"),
+            color=self.text_color(),
         )
 
     @property
@@ -526,7 +547,7 @@ class Text(Element):
             return None
         bb = self.local_bbox
         from .paint import _color as _split_color
-        color, color_alpha = _split_color(self.prop("color"), ctx)
+        color, color_alpha = _split_color(self.text_color(), ctx)
         if color is None:
             color, color_alpha = "#000000", None
         align = str(self.prop("text_align", "center")).lower()

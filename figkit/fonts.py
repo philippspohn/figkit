@@ -18,6 +18,7 @@ import re
 import shutil
 import subprocess
 import sys
+import warnings
 from dataclasses import dataclass
 
 __all__ = [
@@ -118,6 +119,7 @@ def register_font(family: str, path: str, weight="normal", style="normal") -> No
 def clear_cache() -> None:
     global _dir_index
     _dir_index = None
+    _MISSING_GLYPHS.clear()
     _resolve_family.cache_clear()
     _load_font.cache_clear()
     measure_text.cache_clear()
@@ -355,8 +357,12 @@ class Font:
         if self._tt is not None:
             gname = self.glyph_name(ch)
             if gname is None:
-                for alt in (".notdef",):
-                    gname = alt
+                # The font has no such glyph. It will render as .notdef — an
+                # empty box — and measuring .notdef would hand back a
+                # confident width for something that is not the character
+                # asked for, so say so instead of laying out against tofu.
+                _warn_missing_glyph(self, ch)
+                gname = ".notdef"
             try:
                 return self._hmtx[gname][0] / self.upem
             except Exception:
@@ -431,6 +437,22 @@ class Font:
     def __repr__(self) -> str:
         where = os.path.basename(self.path) if self.path else "core-metrics"
         return f"<Font {self.family!r} {self.weight} {self.style} [{where}]>"
+
+
+_MISSING_GLYPHS: set = set()
+
+
+def _warn_missing_glyph(font: "Font", ch: str) -> None:
+    key = (font.path or font.family, ch)
+    if key in _MISSING_GLYPHS:
+        return
+    _MISSING_GLYPHS.add(key)
+    name = os.path.basename(font.path) if font.path else font.family
+    warnings.warn(
+        f"figkit: {name} has no glyph for {ch!r} (U+{ord(ch):04X}); it will "
+        f"render as an empty box, and its measured width is .notdef's, not "
+        f"the character's",
+        stacklevel=2)
 
 
 @functools.lru_cache(maxsize=64)

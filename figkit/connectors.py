@@ -14,7 +14,7 @@ from .geom import BBox, Point, polyline_length, to_point
 from .paint import paint_attrs
 from .svgdoc import Node, RenderContext
 from .svgpath import (fmt, flatten_path, path_bbox, path_from_points,
-                      point_at, rounded_polyline)
+                      path_length, point_at, rounded_polyline)
 from .text import Text
 
 __all__ = [
@@ -416,6 +416,19 @@ class Connector(Element):
         # How far back the stroke has to stop for each head to cover its end.
         trim_end = _head_inset(head_kind, head_size) if has_head else 0.0
         trim_start = _head_inset(tail_kind, tail_size) if has_tail else 0.0
+        shrink = _head_budget(trim_start + trim_end, path_length(d))
+        if shrink < 1.0:
+            # The heads wanted more room than the connector has. Left alone
+            # they eat the whole shaft and overshoot its ends, which reads as
+            # a stray triangle rather than an arrow.
+            if shrink < 0.5:
+                ctx.warn(f"connector is {path_length(d):.0f}pt long but its "
+                         f"heads need {trim_start + trim_end:.0f}pt; shrinking "
+                         f"them to fit (set head_size= to choose)")
+            head_size *= shrink
+            tail_size *= shrink
+            trim_end = _head_inset(head_kind, head_size) if has_head else 0.0
+            trim_start = _head_inset(tail_kind, tail_size) if has_tail else 0.0
         if trim_start or trim_end:
             d = _trim_path(d, trim_start, trim_end)
 
@@ -447,6 +460,17 @@ class Connector(Element):
             if n is not None:
                 nodes.append(n)
         return nodes
+
+
+#: Most of a short connector should still be line rather than arrow head.
+_MAX_HEAD_SHARE = 0.6
+
+
+def _head_budget(inset: float, length: float) -> float:
+    """How much the heads must shrink by to leave a visible shaft."""
+    if inset <= 0 or length <= 0:
+        return 1.0
+    return min(1.0, _MAX_HEAD_SHARE * length / inset)
 
 
 def _head_inset(kind: str, size: float) -> float:

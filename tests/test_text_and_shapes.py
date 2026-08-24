@@ -1,7 +1,7 @@
 import pytest
 
-from figkit import (Box, Circle, Diamond, Ellipse, Group, Image, Line, Matrix,
-                    Path, Pill, Polygon, Polyline, Style, Text, Vector,
+from figkit import (Box, Circle, Diamond, Dot, Ellipse, Group, Image, Line,
+                    Matrix, Path, Pill, Polygon, Polyline, Style, Text, Vector,
                     measure_text)
 from figkit.fonts import get_font
 from figkit.mathtext import math_available
@@ -321,3 +321,77 @@ def test_a_genuine_tex_error_still_raises(monkeypatch):
     monkeypatch.setattr(text_module, "math_available", lambda: True)
     with pytest.raises(MathError):
         Box("$\\frac{$", add=False).bbox
+
+
+# -- rotation, glyphs, dots -------------------------------------------------
+
+@pytest.mark.parametrize("text", ["ab", "abcdefghij", "abcdefghij" * 2])
+def test_a_rotated_label_stays_where_you_put_it(text):
+    """Pivoting on the block's centre displaced it by half its own length, so
+    where a rotated label landed depended on how many characters it had."""
+    t = Text(text, x=100, y=100, rotate=-90, add=False)
+    assert t.bbox.x == pytest.approx(100)
+
+
+def test_rotate_about_still_takes_an_explicit_pivot():
+    plain = Text("abcdefghij", x=100, y=100, add=False)
+    turned = Text("abcdefghij", x=100, y=100, rotate=-90,
+                  rotate_about=plain.bbox.center, add=False)
+    assert turned.bbox.center.x == pytest.approx(plain.bbox.center.x)
+    assert turned.bbox.center.y == pytest.approx(plain.bbox.center.y)
+
+
+def test_a_missing_glyph_says_so_instead_of_measuring_notdef():
+    """measure_text used to hand back .notdef's width — a confident number for
+    a character the font does not have."""
+    import warnings
+
+    from figkit.fonts import clear_cache, get_font, measure_text
+
+    font = get_font()
+    if font._cmap is None:
+        pytest.skip("no real font file on this machine")
+    missing = next((chr(c) for c in range(0x2100, 0x2200)
+                    if c not in font._cmap), None)
+    if missing is None:
+        pytest.skip("this font covers the whole probe range")
+
+    clear_cache()
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        measure_text(missing, size=14)
+    assert any("no glyph" in str(c.message) for c in caught)
+    assert any(f"U+{ord(missing):04X}" in str(c.message) for c in caught)
+
+
+def test_the_missing_glyph_warning_does_not_repeat():
+    import warnings
+
+    from figkit.fonts import clear_cache, get_font, measure_text
+
+    font = get_font()
+    if font._cmap is None:
+        pytest.skip("no real font file on this machine")
+    missing = next((chr(c) for c in range(0x2100, 0x2200)
+                    if c not in font._cmap), None)
+    if missing is None:
+        pytest.skip("this font covers the whole probe range")
+
+    clear_cache()
+    measure_text(missing, size=14)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        measure_text(missing, size=11)          # a different size, same glyph
+    assert not [c for c in caught if "no glyph" in str(c.message)]
+
+
+@pytest.mark.parametrize("dot", [
+    Dot((10, 20), 5, add=False),
+    Dot((10, 20), r=5, add=False),
+    Dot(10, 20, 5, add=False),
+    Dot(10, 20, r=5, add=False),
+])
+def test_dot_takes_a_centre_or_a_pair_of_coordinates(dot):
+    assert dot.r == 5
+    assert dot.bbox.center.x == pytest.approx(10)
+    assert dot.bbox.center.y == pytest.approx(20)
