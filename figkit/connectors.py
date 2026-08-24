@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from .core import Anchor, Element
 from .geom import BBox, Point, polyline_length, to_point
 from .paint import paint_attrs
+from .style import enum_value
 from .svgdoc import Node, RenderContext
 from .svgpath import (fmt, flatten_path, path_bbox, path_from_points,
                       path_length, point_at, rounded_polyline)
@@ -24,6 +25,13 @@ __all__ = [
 
 HEADS = ("triangle", "stealth", "open", "vee", "circle", "dot", "diamond",
          "square", "bar", "tee", "cross", "none")
+
+_ROUTES = {
+    "straight": "straight", "line": "straight",
+    "elbow": "elbow", "orth": "orth", "orthogonal": "orthogonal",
+    "hv": "hv", "vh": "vh", "manhattan": "manhattan",
+    "curve": "curve", "bezier": "bezier", "spline": "spline", "arc": "arc",
+}
 
 _SIDE_NORMAL = {"n": Point(0, -1), "s": Point(0, 1),
                 "e": Point(1, 0), "w": Point(-1, 0)}
@@ -202,7 +210,7 @@ class Connector(Element):
                  label_rotate: bool = False, **kw):
         self.start_ref = start
         self.end_ref = end
-        self.route = str(route).lower()
+        self.route = enum_value(route, "route", _ROUTES)
         self.waypoints = list(waypoints or [])
         self.stub = float(stub)
         self.bend = float(bend)
@@ -798,21 +806,20 @@ def self_loop(element, side: str = "top", size: float = 36.0,
 
     >>> self_loop(state, side="top", label="retry")
     """
-    box = element.bbox
     half = max(0.02, min(0.9, float(spread))) / 2.0
     s = str(side).lower()
     if s in ("top", "n", "up"):
-        start, end = box.uv(0.5 - half, 0.0), box.uv(0.5 + half, 0.0)
-        apex = Point(box.cx, box.y0 - size)
+        start, end = element.uv(0.5 - half, 0.0), element.uv(0.5 + half, 0.0)
+        apex = element.n + (0, -size)
     elif s in ("bottom", "s", "down"):
-        start, end = box.uv(0.5 + half, 1.0), box.uv(0.5 - half, 1.0)
-        apex = Point(box.cx, box.y1 + size)
+        start, end = element.uv(0.5 + half, 1.0), element.uv(0.5 - half, 1.0)
+        apex = element.s + (0, size)
     elif s in ("left", "w"):
-        start, end = box.uv(0.0, 0.5 + half), box.uv(0.0, 0.5 - half)
-        apex = Point(box.x0 - size, box.cy)
+        start, end = element.uv(0.0, 0.5 + half), element.uv(0.0, 0.5 - half)
+        apex = element.w + (-size, 0)
     elif s in ("right", "e"):
-        start, end = box.uv(1.0, 0.5 - half), box.uv(1.0, 0.5 + half)
-        apex = Point(box.x1 + size, box.cy)
+        start, end = element.uv(1.0, 0.5 - half), element.uv(1.0, 0.5 + half)
+        apex = element.e + (size, 0)
     else:
         raise ValueError(f"side={side!r}; use top/bottom/left/right")
     kw.setdefault("route", "curve")

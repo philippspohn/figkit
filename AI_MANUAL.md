@@ -226,14 +226,13 @@ booleans `bold=`, `italic=`, `underline=` and `monospace=` expand into these.
 | `font_size` | `fontsize`, `size` |
 | `font_weight` | `fontweight`, `weight` |
 | `font_style` | `fontstyle` |
-| `font_variant` | — |
 | `color` | `fg`, `foreground`, `text_color` |
 | `line_height` | `leading`, `linespacing` |
 | `letter_spacing` | `tracking` |
-| `word_spacing` | — |
+| `word_spacing` | Extra space between words, in figure units |
 | `text_align` | `align`, `ha`, `halign` |
 | `valign` | `va`, `vertical_align` |
-| `text_transform` | — |
+| `text_transform` | `none`, `uppercase`, `lowercase`, or `capitalize` |
 | `text_decoration` | — |
 | **Math** | |
 | `math_backend` | — |

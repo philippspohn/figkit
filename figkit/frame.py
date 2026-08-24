@@ -16,6 +16,8 @@ from .colors import colormap
 from .core import Element, Group
 from .geom import BBox, Point
 from .shapes import Box, Line, Marker, Polygon, Polyline
+from .style import enum_value
+from .svgdoc import Node, RenderContext
 from .text import Text
 
 __all__ = ["Frame", "nice_ticks"]
@@ -72,8 +74,11 @@ class Frame(Group):
         self.xlim = (float(xlim[0]), float(xlim[1]))
         self.ylim = (float(ylim[0]), float(ylim[1]))
         self.flip_y = bool(flip_y)
-        self.xscale = xscale
-        self.yscale = yscale
+        scales = {"linear": "linear", "lin": "linear", "log": "log",
+                  "log10": "log"}
+        self.xscale = enum_value(xscale, "xscale", scales)
+        self.yscale = enum_value(yscale, "yscale", scales)
+        self._clip_data = bool(clip_data)
         self._bg = None
         self._frame_box = None
         if background is not None:
@@ -87,8 +92,6 @@ class Frame(Group):
                 fill="none", stroke=border if isinstance(border, str) else "#6b7280",
                 padding=0, radius=0, z=50, add=False)
             self.add(self._frame_box)
-        if clip_data:
-            self.clip = True
 
     # -- the mapping -----------------------------------------------------
     def _sx(self, v: float) -> float:
@@ -170,7 +173,8 @@ class Frame(Group):
         return self
 
     # -- helpers ---------------------------------------------------------
-    def _adopt(self, el):
+    def _adopt(self, el, *, data: bool = True):
+        el._frame_data = bool(data)
         self.add(el)
         return el
 
@@ -300,6 +304,7 @@ class Frame(Group):
               title: str = None, title_gap: float = 6.0, side: str = "bottom",
               show_line: bool = True, font_size: float = None, **kw) -> Group:
         """Draw the x axis with ticks and labels."""
+        side = enum_value(side, "side", {"bottom": "bottom", "top": "top"})
         kw.setdefault("stroke", "#6b7280")
         kw.setdefault("stroke_width", 1.0)
         g = Group(add=False)
@@ -326,7 +331,7 @@ class Frame(Group):
                  else (gb.y0 - title_gap),
                  anchor="n" if side == "bottom" else "s")
             g.add(t)
-        return self._adopt(g)
+        return self._adopt(g, data=False)
 
     def yaxis(self, ticks=None, n: int = 5, labels=None, fmt=_fmt_tick,
               tick_size: float = 5.0, label_gap: float = 5.0,
@@ -334,6 +339,7 @@ class Frame(Group):
               show_line: bool = True, font_size: float = None,
               title_rotate: bool = True, **kw) -> Group:
         """Draw the y axis with ticks and labels."""
+        side = enum_value(side, "side", {"left": "left", "right": "right"})
         kw.setdefault("stroke", "#6b7280")
         kw.setdefault("stroke_width", 1.0)
         g = Group(add=False)
@@ -363,7 +369,7 @@ class Frame(Group):
                 t.center_at(tx + (-t.bbox.w / 2 if side == "left"
                                   else t.bbox.w / 2), self.area.cy)
             g.add(t)
-        return self._adopt(g)
+        return self._adopt(g, data=False)
 
     def axes(self, xlabel: str = None, ylabel: str = None, n: int = 5,
              grid: bool = False, **kw) -> Group:
@@ -373,4 +379,33 @@ class Frame(Group):
             out.add(self.gridlines(n=n))
         out.add(self.xaxis(n=n, title=xlabel, **kw))
         out.add(self.yaxis(n=n, title=ylabel, **kw))
-        return self._adopt(out)
+        return self._adopt(out, data=False)
+
+    # -- rendering ------------------------------------------------------
+    def _render_content(self, ctx: RenderContext):
+        """Clip data marks without clipping axis labels or other decoration."""
+        kids = sorted([c for c in self._children if c.visible],
+                      key=lambda c: (getattr(c, "z", 0) or 0))
+        nodes = []
+        clip_id = None
+        for child in kids:
+            node = child.render(ctx)
+            if node is None:
+                continue
+            if self._clip_data and getattr(child, "_frame_data", False):
+                if clip_id is None:
+                    bb = self.area
+                    clip = Node("clipPath").add(
+                        Node("rect", x=bb.x, y=bb.y, width=bb.w, height=bb.h))
+                    clip_id = ctx.add_def(clip)
+                node = Node("g", clip_path=f"url(#{clip_id})").add(node)
+            nodes.append(node)
+        if not nodes:
+            return None
+        group = Node("g").add(*nodes)
+        if self.clip:
+            bb = self.clip_bbox()
+            clip = Node("clipPath").add(
+                Node("rect", x=bb.x, y=bb.y, width=bb.w, height=bb.h))
+            group.attrs["clip-path"] = f"url(#{ctx.add_def(clip)})"
+        return group

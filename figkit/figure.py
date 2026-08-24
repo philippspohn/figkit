@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import os
 import warnings
 
@@ -194,9 +195,19 @@ class Figure(Group):
 
     def to_html(self, *, title: str = None, embed: bool = True,
                 background: str = "#ffffff", **svg_kw) -> str:
-        """A standalone HTML page wrapping the SVG."""
+        """A standalone HTML page wrapping the SVG.
+
+        ``embed=True`` leaves the SVG inline and styleable. ``embed=False``
+        isolates it in an ``<img>`` data URI.
+        """
         svg = self.to_svg(standalone=False, **svg_kw)
         heading = title or self.title or "figure"
+        if embed:
+            body = svg
+        else:
+            payload = base64.b64encode(svg.encode("utf-8")).decode("ascii")
+            body = (f'<img alt="{_esc(heading)}" '
+                    f'src="data:image/svg+xml;base64,{payload}">')
         return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -209,12 +220,12 @@ class Figure(Group):
          background: {background}; padding: 24px; box-sizing: border-box;
          font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }}
   .figkit-wrap {{ max-width: 100%; }}
-  .figkit-wrap svg {{ max-width: 100%; height: auto; display: block; }}
+  .figkit-wrap svg, .figkit-wrap img {{ max-width: 100%; height: auto; display: block; }}
 </style>
 </head>
 <body>
 <div class="figkit-wrap">
-{svg}
+{body}
 </div>
 </body>
 </html>
@@ -281,7 +292,7 @@ def _len(v: float) -> str:
 
 def _esc(s: str) -> str:
     return (str(s).replace("&", "&amp;").replace("<", "&lt;")
-            .replace(">", "&gt;"))
+            .replace(">", "&gt;").replace('"', "&quot;"))
 
 
 def _font_face_css(ctx: RenderContext) -> str:

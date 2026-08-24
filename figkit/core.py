@@ -170,6 +170,7 @@ class Element:
                  h: float = None, *, style=None, classes=(), theme: Theme = None,
                  name: str = None, z: float = 0.0, visible: bool = True,
                  opacity: float = None, transform: Affine = None,
+                 rotate: float = None, rotate_about=None,
                  clip: bool = False, audit: bool = True, add: bool = None,
                  **props):
         self._x = float(x)
@@ -199,6 +200,8 @@ class Element:
         self._dirty = True
         self._bbox_cache = None
         self._set_style(style, props)
+        if rotate:
+            self.rotate(rotate, about=rotate_about)
         container = active_container()
         if add is None:
             add = container is not None

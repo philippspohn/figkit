@@ -42,13 +42,13 @@ with Figure(pad=26, background="#ffffff") as fig:
     Text([Span("Rich text", bold=True), " — one line, several styles"],
          font_size=16, align="left").at(0, 0)
     Text(["accuracy ", Span("76.1", strike=True, color="@muted"), " → ",
-          Span("94.6", color="@good", bold=True), " after ",
+          Span("94.6", color="#4b965c", bold=True), " after ",
           Span("pretraining", italic=True), ", measured on ",
           Span("held-out data", underline=True)],
          font_size=14, align="left").at(0, 30)
 
     # ---- 2. a matrix expression, set like an equation -------------------
-    lhs = Text("$\\Pi_{\\mathcal{NM}} \;=\;$", font_size=19)
+    lhs = Text(r"$\Pi_{\mathcal{NM}} \;=\;$", font_size=19)
     left = LabelledMatrix([[rng.random() for _ in range(4)] for _ in range(5)],
                           cell=17, cmap="grays", stroke="#ffffff",
                           row_label="seq len", col_label="$d$",

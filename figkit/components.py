@@ -7,7 +7,7 @@ import math
 from .colors import colormap, contrast_color, to_hex
 from .component import Component
 from .core import Element, Group
-from .style import Style
+from .style import Style, enum_value
 from .geom import BBox, Point, _expand_spec, to_point
 from .paint import paint_attrs
 from .shapes import Box, Marker
@@ -171,6 +171,7 @@ class Matrix(Group):
         self.cmap = cmap
         self._cells: list = []
         self._value_labels: list = []
+        self._value_label_map: dict = {}
         # Paint properties passed to Matrix(...) style the *cells*, which is
         # what people mean by `Matrix(vals, stroke="#333")`.
         group_kw = {k: v for k, v in kw.items() if k in _GROUP_KEYS}
@@ -211,6 +212,7 @@ class Matrix(Group):
                     self.add(lbl)
                     lbl.center_at(cell_el.bbox.cx, cell_el.bbox.cy)
                     self._value_labels.append(lbl)
+                    self._value_label_map[(i, j)] = lbl
             self._cells.append(row_cells)
 
         if border:
@@ -263,6 +265,9 @@ class Matrix(Group):
         c = self.cell(i, j)
         c.restyle(**style)
         c.to_front()
+        label = self._value_label_map.get((i % self.n_rows, j % self.n_cols))
+        if label is not None:
+            label.to_front()
         return c
 
 
@@ -271,13 +276,16 @@ def Vector(values=None, *, orient: str = "v", **kw) -> Matrix:
     if values is None:
         values = []
     flat = list(values)
-    if str(orient).lower().startswith("v"):
+    orient = enum_value(orient, "orient", {
+        "v": "v", "vertical": "v", "h": "h", "horizontal": "h",
+    })
+    if orient == "v":
         grid = [[v] for v in flat]
     else:
         grid = [flat]
     colors = kw.pop("colors", None)
     if colors is not None:
-        colors = [[c] for c in colors] if str(orient).lower().startswith("v") \
+        colors = [[c] for c in colors] if orient == "v" \
             else [list(colors)]
         return Matrix(None, colors=colors, **kw)
     return Matrix(grid, **kw)
@@ -296,16 +304,21 @@ class ColorBar(Group):
                  labels=True, label_fmt="{:.2g}", x: float = 0.0,
                  y: float = 0.0, **kw):
         super().__init__(**kw)
-        vertical = str(orient).lower().startswith("v")
+        orient = enum_value(orient, "orient", {
+            "v": "v", "vertical": "v", "h": "h", "horizontal": "h",
+        })
+        vertical = orient == "v"
         n = max(2, int(steps))
         for i in range(n):
             t = i / (n - 1)
+            pos = i / n
+            span = (1.0 - pos) if i == n - 1 else (1.0 / n + 0.001)
             col = colormap(cmap, 1.0 - t if vertical else t)
             if vertical:
-                seg = Box(None, x, y + t * h, w, h / n + 0.6, fill=col,
+                seg = Box(None, x, y + pos * h, w, span * h, fill=col,
                           stroke="none", padding=0, radius=0, add=False)
             else:
-                seg = Box(None, x + t * w, y, w / n + 0.6, h, fill=col,
+                seg = Box(None, x + pos * w, y, span * w, h, fill=col,
                           stroke="none", padding=0, radius=0, add=False)
             self.add(seg)
         frame = Box(None, x, y, w, h, fill="none", stroke="#6b7280",

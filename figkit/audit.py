@@ -531,8 +531,19 @@ def _check_contrast(figure, min_contrast: float) -> list:
             continue
         if not getattr(el, "audit_enabled", True):
             continue
-        colour = label.prop("color")
-        if colour is None:
+        colours = [label.text_color()]
+        try:
+            colours.extend(label._resolve_value(run.color)
+                           for line in label.layout.lines for run in line.runs
+                           if run.color is not None)
+        except Exception:
+            pass
+        unique = []
+        for candidate in colours:
+            if candidate is not None and candidate not in unique:
+                unique.append(candidate)
+        colours = unique
+        if not colours:
             continue
         lb = label.bbox
         pos = index.get(id(el), 0)
@@ -544,18 +555,20 @@ def _check_contrast(figure, min_contrast: float) -> list:
             # box's own fill, which is the commonest backdrop of all.
             if _contains(other.bbox, lb, tol=-0.5):
                 backdrop = _solid_fill(other)
-        try:
-            ratio = _contrast_ratio(colour, backdrop)
-        except ValueError:
-            continue
-        if ratio < min_contrast - 1e-9:
-            out.append(Finding(
-                "contrast",
-                f"{describe(el)}: text {colour} on {backdrop} has contrast "
-                f"{_floor2(ratio)}:1 (want {min_contrast:.2f}:1)",
-                severity="error" if ratio < 1.6 else "warning",
-                where=lb.center, elements=(el,),
-                detail={"ratio": ratio, "color": colour, "background": backdrop}))
+        for colour in colours:
+            try:
+                ratio = _contrast_ratio(colour, backdrop)
+            except (TypeError, ValueError):
+                continue
+            if ratio < min_contrast - 1e-9:
+                out.append(Finding(
+                    "contrast",
+                    f"{describe(el)}: text {colour} on {backdrop} has contrast "
+                    f"{_floor2(ratio)}:1 (want {min_contrast:.2f}:1)",
+                    severity="error" if ratio < 1.6 else "warning",
+                    where=lb.center, elements=(el,),
+                    detail={"ratio": ratio, "color": colour,
+                            "background": backdrop}))
     return out
 
 

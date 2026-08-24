@@ -187,7 +187,8 @@ def layout_text(text, font_family=None, font_size: float = 14.0,
                 weight="normal", style="normal", line_height: float = 1.3,
                 letter_spacing: float = 0.0, max_width: float = None,
                 math_backend: str = "auto", math_scale: float = 1.0,
-                markup: bool = False, color=None) -> TextLayout:
+                markup: bool = False, color=None, word_spacing: float = 0.0,
+                text_transform: str = "none") -> TextLayout:
     """Measure ``text``, returning line boxes, run positions and baselines.
 
     ``text`` may be a string, a :class:`Span`, or a list mixing the two.
@@ -201,9 +202,10 @@ def layout_text(text, font_family=None, font_size: float = 14.0,
         runs: list = []
         for body, ov in styled_line:
             runs.extend(_build_runs(body, ov, markup, math_backend,
-                                    math_scale, letter_spacing))
+                                    math_scale, letter_spacing, word_spacing,
+                                    text_transform))
         if max_width and max_width > 0:
-            lines.extend(_wrap(runs, max_width, letter_spacing))
+            lines.extend(_wrap(runs, max_width, letter_spacing, word_spacing))
         else:
             lines.append(runs)
 
@@ -243,7 +245,8 @@ def layout_text(text, font_family=None, font_size: float = 14.0,
 
 
 def _build_runs(body: str, ov: dict, markup: bool, math_backend: str,
-                math_scale: float, letter_spacing: float) -> list:
+                math_scale: float, letter_spacing: float, word_spacing: float,
+                text_transform: str) -> list:
     """Turn one styled string into measured runs, expanding $math$ and markup."""
     size = ov["size"]
     runs: list = []
@@ -264,7 +267,7 @@ def _build_runs(body: str, ov: dict, markup: bool, math_backend: str,
                     "as plain text instead. Install it with "
                     "pip install 'figkit[latex]'.", stacklevel=4)
                 runs.append(_text_run(content, ov, ov["weight"], "italic",
-                                      letter_spacing))
+                                      letter_spacing, word_spacing))
                 continue
             runs.append(Run("math", content, mr.width, mr.ascent, mr.descent,
                             font_size=size, math=mr, color=ov.get("color"),
@@ -272,19 +275,32 @@ def _build_runs(body: str, ov: dict, markup: bool, math_backend: str,
             continue
         if content == "":
             continue
+        transform = str(text_transform or "none").lower().replace("_", "-")
+        if transform == "uppercase":
+            content = content.upper()
+        elif transform == "lowercase":
+            content = content.lower()
+        elif transform == "capitalize":
+            content = content.title()
+        elif transform not in ("none", "normal"):
+            raise ValueError("text_transform must be none, uppercase, "
+                             "lowercase or capitalize")
         sub = (_apply_markup(content, ov["weight"], ov["style"]) if markup
                else [(content, ov["weight"], ov["style"])])
         for part, w, st in sub:
             if part == "":
                 continue
-            runs.append(_text_run(part, ov, w, st, letter_spacing))
+            runs.append(_text_run(part, ov, w, st, letter_spacing,
+                                  word_spacing))
     return runs
 
 
-def _text_run(part: str, ov: dict, weight, style, letter_spacing: float) -> Run:
+def _text_run(part: str, ov: dict, weight, style, letter_spacing: float,
+              word_spacing: float = 0.0) -> Run:
     size = ov["size"]
     family = ov.get("family")
     width = measure_text(part, _fam(family), size, weight, style, letter_spacing)
+    width += word_spacing * sum(ch.isspace() for ch in part)
     metrics = get_font(family, weight, style).metrics
     return Run("text", part, width, metrics.ascent * size,
                metrics.descent * size, font_size=size, weight=weight,
@@ -369,7 +385,8 @@ def _fam(font_family):
     return font_family if isinstance(font_family, str) else ", ".join(font_family)
 
 
-def _wrap(runs: list, max_width: float, letter_spacing: float) -> list:
+def _wrap(runs: list, max_width: float, letter_spacing: float,
+          word_spacing: float = 0.0) -> list:
     """Greedy word wrap. Math runs are unbreakable atoms; every run keeps its
     own styling, so a wrapped line can still mix spans."""
     lines: list = []
@@ -391,6 +408,25 @@ def _wrap(runs: list, max_width: float, letter_spacing: float) -> list:
                    math=run.math, color=run.color, family=run.family,
                    decoration=run.decoration)
 
+    def word_chunks(run: Run, word: str):
+        """Split an unbreakable token so a declared width remains a limit."""
+        chunk = ""
+        for char in word:
+            candidate = chunk + char
+            width = measure_text(candidate, _fam(run.family), run.font_size,
+                                 run.weight, run.style, letter_spacing)
+            if chunk and width > max_width:
+                chunk_width = measure_text(
+                    chunk, _fam(run.family), run.font_size, run.weight,
+                    run.style, letter_spacing)
+                yield chunk, chunk_width
+                chunk = char
+            else:
+                chunk = candidate
+        if chunk:
+            yield chunk, measure_text(chunk, _fam(run.family), run.font_size,
+                                      run.weight, run.style, letter_spacing)
+
     for run in runs:
         if run.kind == "math":
             if cur_w + run.width > max_width and cur:
@@ -403,10 +439,21 @@ def _wrap(runs: list, max_width: float, letter_spacing: float) -> list:
                 continue
             w = measure_text(word, _fam(run.family), run.font_size, run.weight,
                              run.style, letter_spacing)
+            w += word_spacing * sum(ch.isspace() for ch in word)
             if word.strip() == "":
                 if cur:
                     cur.append(clone(run, word, w))
                     cur_w += w
+                continue
+            if w > max_width:
+                if cur:
+                    flush()
+                chunks = list(word_chunks(run, word))
+                for index, (chunk, chunk_w) in enumerate(chunks):
+                    cur.append(clone(run, chunk, chunk_w))
+                    cur_w = chunk_w
+                    if index < len(chunks) - 1:
+                        flush()
                 continue
             if cur_w + w > max_width and cur:
                 flush()
@@ -504,6 +551,8 @@ class Text(Element):
             style=self.prop("font_style"),
             line_height=float(self.prop("line_height")),
             letter_spacing=float(self.prop("letter_spacing", 0) or 0),
+            word_spacing=float(self.prop("word_spacing", 0) or 0),
+            text_transform=self.prop("text_transform", "none") or "none",
             max_width=self._wrap,
             math_backend=self.prop("math_backend", "auto"),
             math_scale=float(self.prop("math_scale", 1.0) or 1.0),
@@ -557,6 +606,7 @@ class Text(Element):
         weight = self.prop("font_weight")
         fstyle = self.prop("font_style")
         spacing = float(self.prop("letter_spacing", 0) or 0)
+        word_spacing = float(self.prop("word_spacing", 0) or 0)
         decoration = self.prop("text_decoration", None)
         stroke = self.prop("stroke", None)
         stroke_w = self.prop("stroke_width", 0)
@@ -584,7 +634,7 @@ class Text(Element):
                     mr = run.math
                     if mr is None or mr.empty:
                         continue
-                    d = translate_path_data(mr.d, rx, by)
+                    d = translate_path_data(mr.d, rx - mr.x_offset, by)
                     nodes.append(Node("path", d=d,
                                       fill=run_color or math_color,
                                       fill_opacity=run_alpha,
@@ -599,7 +649,8 @@ class Text(Element):
                 if as_paths:
                     font = get_font(run_family, run.weight, run.style)
                     if font.available:
-                        d = font.text_to_path(run.content, run_size, spacing)
+                        d = font.text_to_path(run.content, run_size, spacing,
+                                              word_spacing)
                         if d:
                             nodes.append(Node("path",
                                               d=translate_path_data(d, rx, by),
@@ -618,6 +669,8 @@ class Text(Element):
                     attrs["font_style"] = run.style
                 if spacing:
                     attrs["letter_spacing"] = spacing
+                if word_spacing:
+                    attrs["word_spacing"] = word_spacing
                 if decoration:
                     attrs["text_decoration"] = decoration
                 if stroke and stroke != "none" and stroke_w:
@@ -636,7 +689,8 @@ class Text(Element):
         return nodes or None
 
     def __repr__(self) -> str:
-        preview = self._text if len(self._text) <= 24 else self._text[:21] + "..."
+        content = self.text
+        preview = content if len(content) <= 24 else content[:21] + "..."
         return f"<Text {preview!r} {self.bbox}>"
 
 

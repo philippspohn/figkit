@@ -18,6 +18,7 @@ Resolution order for a property, innermost first:
 from __future__ import annotations
 
 import contextvars
+import difflib
 from typing import Any, Iterable, Mapping
 
 from .colors import parse_color, to_hex
@@ -32,7 +33,7 @@ __all__ = ["Style", "Theme", "DEFAULT_THEME", "use_theme", "current_theme",
 
 #: Properties that cascade from a group's ``style`` down to its children.
 INHERITED = frozenset({
-    "font_family", "font_size", "font_weight", "font_style", "font_variant",
+    "font_family", "font_size", "font_weight", "font_style",
     "color", "line_height", "letter_spacing", "word_spacing", "text_align",
     "valign", "text_transform", "math_color", "math_scale",
 })
@@ -49,7 +50,7 @@ PROPS = {
     # geometry
     "radius", "padding",
     # type
-    "font_family", "font_size", "font_weight", "font_style", "font_variant",
+    "font_family", "font_size", "font_weight", "font_style",
     "color", "line_height", "letter_spacing", "word_spacing", "text_align",
     "valign", "text_transform", "text_decoration",
     # math
@@ -61,6 +62,17 @@ PROPS = {
 
 class UnknownProperty(TypeError):
     """Raised for a style property figkit would silently ignore."""
+
+
+def enum_value(value, name: str, aliases: Mapping[str, str]) -> str:
+    """Normalize a string option or raise instead of silently falling back."""
+    key = str(value).strip().lower().replace("_", "-")
+    if key in aliases:
+        return aliases[key]
+    match = difflib.get_close_matches(key, aliases, n=1, cutoff=0.55)
+    hint = f" Did you mean {match[0]!r}?" if match else ""
+    choices = sorted(set(aliases.values()))
+    raise ValueError(f"{name}={value!r} is not valid.{hint} Use one of {choices}")
 
 
 def register_props(*names: str) -> None:
@@ -396,7 +408,8 @@ class Theme:
 
 def _looks_like_value(key: str) -> bool:
     """Guard so ``Theme(shadow={...})``-style value dicts aren't read as roles."""
-    return normalize_key(key) in {"shadow", "gradient", "filter", "clip"}
+    normalized = normalize_key(key)
+    return normalized in PROPS or normalized in {"gradient", "filter", "clip"}
 
 
 # --------------------------------------------------------------------------
