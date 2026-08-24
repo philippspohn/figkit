@@ -170,6 +170,7 @@ class Element:
                  h: float = None, *, style=None, classes=(), theme: Theme = None,
                  name: str = None, z: float = 0.0, visible: bool = True,
                  opacity: float = None, transform: Affine = None,
+                 rotate: float = None, rotate_about=None,
                  clip: bool = False, audit: bool = True, add: bool = None,
                  **props):
         self._x = float(x)
@@ -199,6 +200,11 @@ class Element:
         self._dirty = True
         self._bbox_cache = None
         self._set_style(style, props)
+        # Deferred: at this point a subclass has not finished __init__, so an
+        # auto-sized element does not know how big it is yet and a label-sized
+        # one has no label. Rotating now would pivot on the placeholder box and
+        # land the element somewhere that depends on how long its text is.
+        self._pending_rotate = (rotate, rotate_about) if rotate else None
         container = active_container()
         if add is None:
             add = container is not None
@@ -350,6 +356,14 @@ class Element:
             self._dirty = False
             self._measure()
 
+    def _apply_pending_rotate(self) -> None:
+        """Run a constructor ``rotate=`` now that the element has a size."""
+        pending = getattr(self, "_pending_rotate", None)
+        if pending is None:
+            return
+        self._pending_rotate = None          # before rotating: it reads bbox
+        self.rotate(pending[0], about=pending[1])
+
     def invalidate(self) -> "Element":
         self._dirty = True
         self._bbox_cache = None
@@ -372,12 +386,16 @@ class Element:
     @property
     def local_bbox(self) -> BBox:
         """Bounds in the element's own (pre-transform) coordinates."""
+        self._apply_pending_rotate()
         self._ensure()
         return BBox(self._x, self._y, self._w or 0.0, self._h or 0.0)
 
     @property
     def bbox(self) -> BBox:
         """Bounds in world (figure) coordinates. Anchors read this."""
+        # Before world_matrix(): a deferred rotation is what puts the rotation
+        # *into* that matrix, so reading it first would return a stale one.
+        self._apply_pending_rotate()
         m = self.world_matrix()
         lb = self.local_bbox
         return lb if m.is_identity else m.apply_bbox(lb)
@@ -932,6 +950,7 @@ class Group(Element):
     @property
     def local_bbox(self) -> BBox:
         """World bounds mapped back into the group's own coordinate space."""
+        self._apply_pending_rotate()
         world = self.bbox_from_children()
         m = self.world_matrix()
         return world if m.is_identity else m.inverse().apply_bbox(world)
@@ -943,6 +962,7 @@ class Group(Element):
 
     @property
     def bbox(self) -> BBox:
+        self._apply_pending_rotate()
         if self._bbox_cache is None:
             self._bbox_cache = self.bbox_from_children()
         return self._bbox_cache

@@ -22,6 +22,11 @@ All notable changes to figkit are recorded here. The format follows
 - Arrow heads shrink to fit connectors too short to hold them. A head larger
   than the connector used to consume the whole shaft and overshoot its start,
   drawing a stray triangle with no line.
+- String options such as connector routes, marker shapes, grid order/alignment,
+  vector orientation, frame scales/sides and image fit now reject invalid
+  values with a suggestion instead of silently choosing another rendering.
+- Raster export now rejects `.jpg`, `.jpeg` and `.webp`; these extensions were
+  accepted even though the bytes written were always PNG.
 
 ### Added
 
@@ -35,6 +40,18 @@ All notable changes to figkit are recorded here. The format follows
   character.
 - `Dot` accepts `Dot(x, y, r=...)` as well as `Dot(center, r)`, matching
   `Circle` and every other element's `x, y` front door.
+- `word_spacing=` participates in both measurement and SVG/path rendering, and
+  `text_transform=` supports `none`, `uppercase`, `lowercase` and `capitalize`.
+  The advertised but unimplemented `font_variant` property is now rejected
+  instead of being accepted as a silent no-op.
+- `rotate=` and `rotate_about=` are common element constructor options, as the
+  manual already claimed, rather than Text-only constructor options. The
+  rotation is applied on first measurement rather than in `Element.__init__`,
+  because a subclass has not sized itself yet at that point: pivoting there
+  used the placeholder box, so a label-sized element landed somewhere that
+  depended on how long its text was.
+- `Figure.to_html(embed=False)` isolates the SVG in an image data URI;
+  `embed=True` keeps the SVG inline and styleable.
 
 ### Documentation
 
@@ -53,6 +70,26 @@ All notable changes to figkit are recorded here. The format follows
   lived in both `pyproject.toml` and `figkit/__init__.py`, and a release only
   bumped the first. `pyproject.toml` now reads the version from the package,
   so there is one number to change and it cannot drift again.
+- macOS `.ttc`/`.otc` system fonts failed to load because the collection
+  loader received a TTFont-only argument. Collections now select the closest
+  family/weight/style face, restoring accurate metrics and text outlines.
+- `hstack(..., at=...)` and `vstack(..., at=...)` now place the north-west
+  corner of the completed result at `at`, including an optional panel.
+- `max_w=` now constrains and reflows a shape's label, including long tokens,
+  instead of shrinking only the container and leaving its text outside.
+- `self_loop()` keeps live anchors for its feet and apex, so it follows an
+  element after movement or resizing.
+- `Frame(clip_data=True)` clips only data marks; axes, ticks and titles remain
+  visible outside the plot area.
+- `Matrix.highlight()` keeps the highlighted cell's value label in front.
+- Contrast audit uses the same resolved text colour as rendering, including
+  `Text(fill=...)` and per-Span colours.
+- `ColorBar` segments stay within the declared strip bounds.
+- Dict-valued theme fills such as gradients are no longer mistaken for roles.
+- Math glyph left overhang is included in measurement and normalized in the
+  generated path.
+- Rich `Text` content has a safe repr, and outlined missing glyphs now draw the
+  `.notdef` box described by their warning instead of leaving a blank gap.
 
 ## [0.1.1] — 2026-08-21
 

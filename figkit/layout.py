@@ -11,6 +11,7 @@ import math
 from .components import Panel
 from .core import Element, Group
 from .geom import BBox, Point, to_point
+from .style import enum_value
 
 __all__ = [
     "align", "align_h", "align_v", "distribute_h", "distribute_v",
@@ -224,15 +225,17 @@ def hstack(items, gap: float = 16.0, align: str = "center", at=None,
     els = [e for e in _iter(items) if isinstance(e, Element)]
     if not els:
         return Group(name=name)
-    if at is not None:
-        p = to_point(at)
-        els[0].at(p.x, p.y, anchor="nw")
     distribute_h(els, gap=gap)
     _align_cross(els, align, horizontal=True)
     if panel or pad is not None or panel_style:
-        return fit(els, pad=16 if pad is None else pad, name=name,
-                   **panel_style)
-    return Group(*els, name=name)
+        result = fit(els, pad=16 if pad is None else pad, name=name,
+                     **panel_style)
+    else:
+        result = Group(*els, name=name)
+    if at is not None:
+        p = to_point(at)
+        result.at(p.x, p.y, anchor="nw")
+    return result
 
 
 def vstack(items, gap: float = 12.0, align: str = "center", at=None,
@@ -241,15 +244,17 @@ def vstack(items, gap: float = 12.0, align: str = "center", at=None,
     els = [e for e in _iter(items) if isinstance(e, Element)]
     if not els:
         return Group(name=name)
-    if at is not None:
-        p = to_point(at)
-        els[0].at(p.x, p.y, anchor="nw")
     distribute_v(els, gap=gap)
     _align_cross(els, align, horizontal=False)
     if panel or pad is not None or panel_style:
-        return fit(els, pad=16 if pad is None else pad, name=name,
-                   **panel_style)
-    return Group(*els, name=name)
+        result = fit(els, pad=16 if pad is None else pad, name=name,
+                     **panel_style)
+    else:
+        result = Group(*els, name=name)
+    if at is not None:
+        p = to_point(at)
+        result.at(p.x, p.y, anchor="nw")
+    return result
 
 
 def baseline_of(element) -> float:
@@ -336,6 +341,15 @@ def grid(items, cols: int = None, rows: int = None, gap=16, at=None,
     els = [e for e in _iter(items) if isinstance(e, Element)]
     if not els:
         return Group(name=name)
+    align = enum_value(align, "align", {
+        value: value for value in
+        ("center", "left", "right", "top", "bottom", "nw", "ne", "sw", "se")
+    })
+    order = enum_value(order, "order", {
+        "row": "row", "rows": "row", "row-major": "row",
+        "col": "col", "cols": "col", "column": "col",
+        "columns": "col", "column-major": "col",
+    })
     n = len(els)
     if cols is None and rows is None:
         cols = math.ceil(math.sqrt(n))
@@ -370,14 +384,14 @@ def grid(items, cols: int = None, rows: int = None, gap=16, at=None,
         cell = BBox(xs[c], ys[r], col_w[c], row_h[r])
         anchor = {"center": "center", "left": "w", "right": "e",
                   "top": "n", "bottom": "s", "nw": "nw", "ne": "ne",
-                  "sw": "sw", "se": "se"}.get(str(align).lower(), "center")
+                  "sw": "sw", "se": "se"}[align]
         target = cell.anchor(anchor)
         el.at(target.x, target.y, anchor=anchor)
     return Group(*els, name=name)
 
 
 def _rc(idx: int, cols: int, rows: int, order: str) -> tuple:
-    if str(order).startswith("col"):
+    if order == "col":
         return idx % rows, idx // rows
     return idx // cols, idx % cols
 

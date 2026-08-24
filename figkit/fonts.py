@@ -267,6 +267,38 @@ class FontMetrics:
         return self.ascent + self.descent + self.line_gap
 
 
+def _collection_face(fonts: list, family: str, weight: int, style: str):
+    """Pick the face in a TTC/OTC closest to the requested CSS face."""
+    if not fonts:
+        raise ValueError("font collection contains no faces")
+    wanted = [n.lower() for n in split_family(family)]
+
+    def score(tt) -> tuple:
+        names = tt.get("name")
+        family_names = []
+        if names is not None:
+            for name_id in (16, 1):  # typographic family, legacy family
+                value = names.getDebugName(name_id)
+                if value:
+                    family_names.append(value.lower())
+        family_penalty = 0
+        if wanted and family_names and not any(
+                want in have or have in want
+                for want in wanted for have in family_names):
+            family_penalty = 10000
+        os2 = tt.get("OS/2")
+        face_weight = int(getattr(os2, "usWeightClass", 400) or 400)
+        italic = False
+        if os2 is not None:
+            italic = bool(getattr(os2, "fsSelection", 0) & 1)
+        head = tt.get("head")
+        italic = italic or bool(getattr(head, "macStyle", 0) & 2)
+        style_penalty = 2000 if italic != (style == "italic") else 0
+        return family_penalty + style_penalty + abs(face_weight - weight),
+
+    return min(fonts, key=score)
+
+
 class Font:
     """A measurable font. Use :func:`get_font` rather than constructing one."""
 
@@ -280,7 +312,9 @@ class Font:
         self._hmtx = None
         self._glyphset = None
         self._kern = None
+        self._collection = None
         self._bytes: bytes | None = None
+        self.load_error: Exception | None = None
         self.metrics = FontMetrics()
         self._core = self._pick_core()
         if path:
@@ -309,9 +343,15 @@ class Font:
             with open(self.path, "rb") as fh:
                 self._bytes = fh.read()
             if self.path.lower().endswith((".ttc", ".otc")):
-                coll = TTCollection(io.BytesIO(self._bytes), lazy=True,
-                                    fontNumber=0)
-                tt = coll.fonts[0]
+                # TTCollection explicitly rejects TTFont's ``fontNumber``
+                # argument.  Passing it made every macOS system .ttc resolve
+                # successfully and then fail to load behind the broad error
+                # handler below.  Keep the collection alive for lazy table
+                # reads and select the closest face ourselves.
+                coll = TTCollection(io.BytesIO(self._bytes), lazy=True)
+                self._collection = coll
+                tt = _collection_face(coll.fonts, self.family,
+                                      self.weight, self.style)
             else:
                 tt = TTFont(io.BytesIO(self._bytes), lazy=True, fontNumber=0)
             self._tt = tt
@@ -334,7 +374,8 @@ class Font:
             )
             self._cmap = tt.getBestCmap()
             self._hmtx = tt["hmtx"]
-        except Exception:
+        except Exception as exc:
+            self.load_error = exc
             self._tt = None
             self.path = None
 
@@ -394,7 +435,8 @@ class Font:
         return self._glyphset
 
     def text_to_path(self, text: str, size: float = 1.0,
-                     letter_spacing: float = 0.0) -> str:
+                     letter_spacing: float = 0.0,
+                     word_spacing: float = 0.0) -> str:
         """SVG path data for ``text`` on a baseline at the origin (y down)."""
         gs = self.glyph_set()
         if gs is None:
@@ -409,8 +451,12 @@ class Font:
         x = 0.0
         for ch in text:
             gname = self.glyph_name(ch)
-            if gname is None or gname not in gs:
-                x += self.char_advance(ch) * size + letter_spacing
+            if gname is None:
+                _warn_missing_glyph(self, ch)
+                gname = ".notdef"
+            if gname not in gs:
+                x += (self.char_advance(ch) * size + letter_spacing
+                      + (word_spacing if ch.isspace() else 0.0))
                 continue
             # flip y (font space is y-up, SVG is y-down) and place at x
             tpen = TransformPen(pen_out, (scale, 0, 0, -scale, x, 0))
@@ -418,7 +464,8 @@ class Font:
                 gs[gname].draw(tpen)
             except Exception:
                 pass
-            x += self.char_advance(ch) * size + letter_spacing
+            x += (self.char_advance(ch) * size + letter_spacing
+                  + (word_spacing if ch.isspace() else 0.0))
         return pen_out.getCommands()
 
     def font_data(self) -> bytes | None:

@@ -11,6 +11,7 @@ import xml.etree.ElementTree as ET
 from .core import Element
 from .geom import Affine, BBox
 from .svgdoc import Node, RenderContext
+from .style import enum_value
 
 __all__ = ["Image", "image_size", "SVGFile"]
 
@@ -125,7 +126,10 @@ class Image(Element):
                  fit: str = "contain", mime: str = None, **kw):
         self.source = source
         self.inline = inline
-        self.fit = fit
+        self.fit = enum_value(fit, "fit", {
+            "contain": "contain", "cover": "cover",
+            "fill": "stretch", "stretch": "stretch",
+        })
         self._mime = mime
         self._data: bytes | None = None
         self._text: str | None = None

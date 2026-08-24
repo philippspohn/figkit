@@ -151,10 +151,10 @@ def _render_mathtext(expr: str, size: float) -> MathRender:
     bb = tp.get_extents()
     return MathRender(
         d=d,
-        width=float(bb.x1),
+        width=max(0.0, float(bb.x1 - bb.x0)),
         ascent=max(0.0, float(bb.y1)),
         descent=max(0.0, -float(bb.y0)),
-        x_offset=0.0,
+        x_offset=float(bb.x0),
         size=size,
         backend="mathtext",
     )
@@ -231,7 +231,7 @@ def _render_latex(expr: str, size: float, display: bool = False) -> MathRender:
     d = scale_path_data(d, scale)
     x0, y0, x1, y1 = path_bbox(d)
     # dvisvgm puts the baseline of the first line at y = 0.
-    return MathRender(d=d, width=max(0.0, x1), ascent=max(0.0, -y0),
+    return MathRender(d=d, width=max(0.0, x1 - x0), ascent=max(0.0, -y0),
                       descent=max(0.0, y1), x_offset=x0, size=size,
                       backend="latex")
 

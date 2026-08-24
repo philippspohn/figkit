@@ -21,7 +21,7 @@ class ExportError(RuntimeError):
     """Raised when a figure cannot be converted to the requested format."""
 
 
-_RASTER_FORMATS = {"png", "jpg", "jpeg", "webp"}
+_RASTER_FORMATS = {"png"}
 _VECTOR_FORMATS = {"svg", "pdf", "ps", "eps"}
 
 
@@ -73,6 +73,9 @@ def save_figure(fig, path, *, scale: float = None, dpi: float = None,
         with open(path, "wb") as fh:
             fh.write(data)
         return os.path.abspath(path)
+    if fmt in ("jpg", "jpeg", "webp"):
+        raise ExportError("figkit currently exports raster images as PNG; "
+                          f".{fmt} encoding is not supported")
     if fmt in _VECTOR_FORMATS:
         data = to_pdf(fig, None, fmt=fmt, **kw)
         with open(path, "wb") as fh:
@@ -125,6 +128,9 @@ def _split_kw(kw: dict) -> tuple:
 def to_png(fig, path=None, *, scale: float = 2.0, dpi: float = None,
            background=None, fmt: str = "png", **kw):
     """Rasterise a figure. Returns bytes when ``path`` is ``None``."""
+    if str(fmt).lower() != "png":
+        raise ExportError("figkit currently exports raster images as PNG; "
+                          f"{fmt!r} encoding is not supported")
     svg_kw, _ = _split_kw(kw)
     # Outlining text removes any dependency on the converter's font stack.
     svg_kw.setdefault("text_as_paths", True)

@@ -7,6 +7,7 @@ import math
 from .core import Element
 from .geom import Affine, BBox, Point, _expand_spec, to_point
 from .paint import paint_attrs
+from .style import enum_value
 from .svgdoc import Node, RenderContext
 from .text import Text
 from .svgpath import (fmt, path_bbox, path_from_points, rounded_polyline,
@@ -118,7 +119,13 @@ class Shape(Element):
         if wrap is False:
             wrap = None
         elif wrap is True or wrap is None:
-            wrap = usable if self._explicit_w else None
+            if self._explicit_w:
+                wrap = usable
+            elif self.max_w is not None:
+                constrained = max(1.0, float(self.max_w) - left - right)
+                wrap = constrained if constrained > 8 else None
+            else:
+                wrap = None
         if self._label is not None:
             self._label._wrap = wrap if wrap else None
             self._label.invalidate()
@@ -743,7 +750,7 @@ class Marker(Element):
     def __init__(self, center=(0, 0), size: float = 7.0, shape: str = "circle",
                  **kw):
         p = to_point(center)
-        self.shape = str(shape).lower()
+        self.shape = enum_value(shape, "shape", {s: s for s in self.SHAPES})
         super().__init__(p.x - size / 2, p.y - size / 2, size, size, **kw)
 
     def _render_content(self, ctx: RenderContext):

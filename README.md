@@ -218,7 +218,7 @@ Anchors on every element: `n s e w ne nw se sw center`, plus `at_angle(deg)`,
 
 ```bash
 pip install -e ".[dev]"
-pytest                       # 277 tests; every example must audit clean
+pytest                       # full suite; every example must audit clean
 python -m pyflakes figkit
 python examples/01_pipeline.py
 ```
