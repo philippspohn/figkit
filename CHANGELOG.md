@@ -45,7 +45,11 @@ All notable changes to figkit are recorded here. The format follows
   The advertised but unimplemented `font_variant` property is now rejected
   instead of being accepted as a silent no-op.
 - `rotate=` and `rotate_about=` are common element constructor options, as the
-  manual already claimed, rather than Text-only constructor options.
+  manual already claimed, rather than Text-only constructor options. The
+  rotation is applied on first measurement rather than in `Element.__init__`,
+  because a subclass has not sized itself yet at that point: pivoting there
+  used the placeholder box, so a label-sized element landed somewhere that
+  depended on how long its text was.
 - `Figure.to_html(embed=False)` isolates the SVG in an image data URI;
   `embed=True` keeps the SVG inline and styleable.
 

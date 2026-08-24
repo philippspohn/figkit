@@ -5,8 +5,9 @@ import re
 
 import pytest
 
-from figkit import (Box, ColorBar, Figure, Frame, Marker, Matrix, Span, Text,
-                    Theme, Vector, connect, grid, hstack, self_loop, vstack)
+from figkit import (Box, ColorBar, Diamond, Ellipse, Figure, Frame, Group,
+                    Marker, Matrix, Pill, Span, Text, Theme, Vector, connect,
+                    grid, hstack, self_loop, vstack)
 from figkit.export import ExportError
 from figkit.fonts import Font, font_dirs
 from figkit.style import UnknownProperty
@@ -179,3 +180,41 @@ def test_rotate_is_a_common_element_constructor_option():
     box = Box(None, w=40, h=20, rotate=45, add=False)
     assert box.bbox.w == pytest.approx(42.4264, abs=0.001)
     assert box.bbox.h == pytest.approx(42.4264, abs=0.001)
+
+
+def _box_tuple(bb):
+    return (bb.x, bb.y, bb.w, bb.h)
+
+
+@pytest.mark.parametrize("shape", [Box, Pill, Ellipse, Diamond])
+def test_constructor_rotate_matches_rotating_afterwards(shape):
+    """A subclass has not sized itself when Element.__init__ runs, so applying
+    the rotation there pivoted on the placeholder box and landed the element
+    somewhere that depended on how long its label was."""
+    after = shape("A considerably longer label", add=False)
+    after.rotate(45)
+    at_construction = shape("A considerably longer label", rotate=45,
+                            add=False)
+    assert _box_tuple(at_construction.bbox) == pytest.approx(
+        _box_tuple(after.bbox))
+
+
+def test_constructor_rotate_matches_for_groups_too():
+    def pair():
+        return [Box("hi", 0, 0, 40, 20, add=False),
+                Box("there", 60, 0, 40, 20, add=False)]
+
+    after = Group(*pair(), add=False)
+    after.rotate(30)
+    at_construction = Group(*pair(), rotate=30, add=False)
+    assert _box_tuple(at_construction.bbox) == pytest.approx(
+        _box_tuple(after.bbox))
+
+
+def test_constructor_rotate_about_takes_an_explicit_pivot():
+    after = Box("Encoder block", add=False)
+    after.rotate(90, about=(0, 0))
+    at_construction = Box("Encoder block", rotate=90, rotate_about=(0, 0),
+                          add=False)
+    assert _box_tuple(at_construction.bbox) == pytest.approx(
+        _box_tuple(after.bbox))
